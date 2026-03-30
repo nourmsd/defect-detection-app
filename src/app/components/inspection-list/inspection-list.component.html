@@ -1,0 +1,9 @@
+<div class="inspection" *ngFor="let i of inspections">
+
+  <span>{{ i.timestamp | date:'HH:mm:ss' }}</span>
+
+  <span [ngClass]="i.label === 'OK' ? 'ok' : 'defect'">
+    {{ i.label }}
+  </span>
+
+</div>

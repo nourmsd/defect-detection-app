@@ -1,1 +1,58 @@
 /* You can add global styles to this file, and also import other style files */
+
+:root {
+  --neon-blue: #00f3ff;
+  --bg-dark: #0f172a;
+  
+  /* Defaults to Dark */
+  --bg-color: #0f172a;
+  --text-color: #f8fafc;
+  --panel-bg: rgba(255, 255, 255, 0.05);
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --stat-value: #ffffff;
+}
+
+body.light-mode {
+  --bg-color: #f1f5f9;
+  --text-color: #1e293b;
+  --panel-bg: #ffffff;
+  --panel-border: rgba(0, 0, 0, 0.1);
+  --stat-value: #1e293b;
+  --neon-blue: #0088cc;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: 'Inter', 'Roboto', sans-serif;
+  margin: 0;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Glassmorphism Panel */
+.glass-panel {
+  background: var(--panel-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* Micro-animations */
+.glass-panel:hover, .stat-card:hover, .device-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0, 243, 255, 0.15);
+  border-color: rgba(0, 243, 255, 0.3);
+}
+
+.gradient-blue { background: linear-gradient(135deg, rgba(0,243,255,0.1), rgba(0,0,0,0)); }
+.gradient-red { background: linear-gradient(135deg, rgba(255,51,102,0.1), rgba(0,0,0,0)); }
+.gradient-green { background: linear-gradient(135deg, rgba(0,221,119,0.1), rgba(0,0,0,0)); }
+
+/* Error Snackbar globally */
+.error-snackbar {
+  background-color: #ff3366 !important;
+  color: white !important;
+}

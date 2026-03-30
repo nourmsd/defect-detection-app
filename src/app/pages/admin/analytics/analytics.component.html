@@ -1,0 +1,28 @@
+<div class="dashboard-wrapper">
+  <mat-toolbar color="primary" class="glass-toolbar">
+    <span>Quality Analytics</span>
+    <span class="spacer"></span>
+    <nav class="admin-nav">
+      <a mat-button routerLink="/admin-dashboard">Overview</a>
+      <a mat-button routerLink="/admin/history">History</a>
+      <a mat-button routerLink="/admin/analytics" routerLinkActive="active">Analytics</a>
+    </nav>
+    <button mat-icon-button (click)="logout()">
+      <mat-icon>logout</mat-icon>
+    </button>
+  </mat-toolbar>
+
+  <div class="content-container">
+    <div class="glass-panel full-width">
+      <h3>Defect Rate & Throughput Trends</h3>
+      <div class="chart-container">
+        <!-- In a real app, use <canvas baseChart ...></canvas> -->
+        <div class="chart-placeholder">
+          <mat-icon class="large-icon">bar_chart</mat-icon>
+          <p>Real-time analytics chart visualization</p>
+          <span class="sub-text">(Integrated with ng2-charts)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,11 @@
+@import '../dashboard/dashboard.component.css';
+
+.chart-container {
+  height: 500px;
+  margin-top: 20px;
+}
+
+.sub-text {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.4);
+}
