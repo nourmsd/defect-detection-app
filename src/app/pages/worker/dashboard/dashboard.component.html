@@ -1,4 +1,4 @@
-<div class="dashboard-wrapper">
+<div class="dashboard-wrapper" [class.light-mode-worker]="themeService.isLight">
   <mat-toolbar color="primary" class="glass-toolbar">
     <span>Worker Dashboard - Quality Control</span>
     <span class="spacer"></span>
@@ -23,32 +23,34 @@
       </div>
     </div>
 
-    <!-- Stats Section (Moved from Admin) -->
+    <!-- Stats Section — wrap all three cards -->
     <div class="grid-item stats-section">
+
       <div class="stat-card glass-panel normal">
         <div class="stat-icon"><mat-icon>check_circle</mat-icon></div>
         <div class="stat-info">
-          <span class="label">Normal Rate</span>
-          <span class="value">{{normalRate | number:'1.1-1'}}%</span>
+          <span class="label">Normal Products</span>
+          <span class="value">{{normalCount}} <small>units</small></span>
         </div>
       </div>
-      
+
       <div class="stat-card glass-panel defected">
         <div class="stat-icon"><mat-icon>warning</mat-icon></div>
         <div class="stat-info">
-          <span class="label">Defect Rate</span>
-          <span class="value">{{defectRate | number:'1.1-1'}}%</span>
+          <span class="label">Defective Products</span>
+          <span class="value">{{defectCount}} <small>units</small></span>
         </div>
       </div>
 
       <div class="stat-card glass-panel total">
         <div class="stat-icon"><mat-icon>assessment</mat-icon></div>
         <div class="stat-info">
-          <span class="label">Total Rate</span>
-          <span class="value">{{totalInspections | number}} units</span>
+          <span class="label">Total Inspected</span>
+          <span class="value">{{totalInspections}} <small>units</small></span>
         </div>
       </div>
-    </div>
+
+    </div> <!-- end .stats-section -->
 
     <!-- Alerts Section -->
     <div class="grid-item alerts-section glass-panel">

@@ -15,9 +15,12 @@ import { Subscription } from 'rxjs';
 export class WorkerDashboardComponent implements OnInit, OnDestroy {
   alerts: any[] = [];
   inspections: Inspection[] = [];
-  defectRate = 0;
-  normalRate = 0;
-  totalInspections = 0;
+  //defectRate = 0;
+  //normalRate = 0;
+  //totalInspections = 0;
+  normalCount: number = 0;     // raw count of OK products
+  defectCount: number = 0;     // raw count of defective products
+  totalInspections: number = 0;
   displayedColumns: string[] = ['id', 'label', 'timestamp'];
   private alertSubscription?: Subscription;
 
@@ -34,13 +37,13 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
 
     this.alertSubscription = this.socketService.alerts$.subscribe(alert => {
       this.alerts.unshift(alert);
-      this.snackBar.open(alert.message, 'Close', { 
+      this.snackBar.open(alert.message, 'Close', {
         duration: 5000,
         panelClass: ['alert-snackbar', `alert-${alert.type}`]
       });
       // Limit to last 5 alerts for worker
       if (this.alerts.length > 5) this.alerts.pop();
-      
+
       // Refresh inspections list on new alert
       this.fetchInspections();
     });
@@ -49,9 +52,8 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   fetchInspections() {
     this.apiService.getInspections().subscribe({
       next: (data) => {
-        this.totalInspections = data.length;
-        this.inspections = data.slice(0, 5); // display only last 5
-        this.calculateMetrics(data);
+        this.inspections = data.slice(0, 5);
+        this.calculateMetrics(data); // totalInspections now set inside here
       },
       error: (err) => console.error('Failed to fetch inspections', err)
     });
@@ -59,11 +61,11 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
 
   private calculateMetrics(data: Inspection[]) {
     if (data.length === 0) return;
-    const defects = data.filter(i => i.label === 'defective').length;
-    const normal = data.filter(i => i.label === 'OK').length;
-    this.defectRate = (defects / data.length) * 100;
-    this.normalRate = (normal / data.length) * 100;
+    this.normalCount = data.filter(i => i.label === 'OK').length;
+    this.defectCount = data.filter(i => i.label !== 'OK').length;
+    this.totalInspections = data.length; // ← moved here, single source of truth
   }
+
 
   ngOnDestroy() {
     this.alertSubscription?.unsubscribe();

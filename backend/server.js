@@ -48,15 +48,21 @@ if (!MONGO_URI) {
   process.exit(1);
 }
 
-mongoose.connect(MONGO_URI)
+mongoose.connect(MONGO_URI, {
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
+  connectTimeoutMS: 10000,
+  maxPoolSize: 10,
+  retryWrites: true
+})
   .then(async () => {
     console.log('Connected to MongoDB');
-    
+
     // Seed Fixed Admin
     const User = require('./models/User');
     const fixedAdminEmail = 'nourmessaoudi54@gmail.com';
     const existingAdmin = await User.findOne({ email: fixedAdminEmail });
-    
+
     if (!existingAdmin) {
       console.log(`[Seed] Creating fixed admin: ${fixedAdminEmail}`);
       const admin = new User({

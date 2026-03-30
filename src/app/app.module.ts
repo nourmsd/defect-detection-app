@@ -16,6 +16,7 @@ import { MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTableModule } from '@angular/material/table';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatSelectModule } from '@angular/material/select';
 
 import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
@@ -66,7 +67,9 @@ import { ErrorInterceptor } from './services/error.interceptor';
     MatTableModule,
     MatToolbarModule,
     MatTooltipModule,
-    BaseChartDirective
+    BaseChartDirective,
+    MatTooltipModule,
+    MatSelectModule
   ],
   providers: [
     provideCharts(withDefaultRegisterables()),
@@ -74,4 +77,4 @@ import { ErrorInterceptor } from './services/error.interceptor';
   ],
   bootstrap: [AppComponent]
 })
-export class AppModule {}
+export class AppModule { }

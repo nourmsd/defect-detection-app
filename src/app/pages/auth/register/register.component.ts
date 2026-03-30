@@ -23,10 +23,10 @@ export class RegisterComponent {
     this.registerForm = this.formBuilder.group({
       username: ['', Validators.required],
       email: ['', [Validators.required, Validators.email]],
-      password: ['', [Validators.required, Validators.minLength(6)]]
+      password: ['', [Validators.required, Validators.minLength(6)]],
+      role: ['worker', Validators.required]
     });
   }
-
   onSubmit() {
     if (this.registerForm.invalid) return;
 

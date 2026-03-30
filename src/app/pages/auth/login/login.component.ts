@@ -14,7 +14,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 export class LoginComponent {
   loginForm: FormGroup;
   loading = false;
-  hidePassword = false;
+  hidePassword = true;
   returnUrl: string;
 
   constructor(
@@ -32,7 +32,7 @@ export class LoginComponent {
 
     // get return url from route parameters or default to '/'
     this.returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/';
-    
+
     // if already logged in, redirect
     if (this.authService.isLoggedIn()) {
       this.redirectUser();
@@ -50,9 +50,13 @@ export class LoginComponent {
         this.redirectUser();
       },
       error: (err) => {
-        let msg = err.error?.message || 'Login failed';
-        if (err.status === 0) msg = 'Cannot connect to Server. Check connection.';
-        this.snackBar.open(msg, 'Close', { duration: 5000, panelClass: ['error-snackbar'] });
+        // BEFORE: err.error?.message || 'Login failed' — generic, misses status 0
+        // AFTER:  use resolvedMessage set by the interceptor
+        const msg = err.resolvedMessage || err.error?.message || 'Login failed';
+        this.snackBar.open(msg, 'Close', {
+          duration: 5000,
+          panelClass: ['error-snackbar']
+        });
         this.loading = false;
       }
     });
