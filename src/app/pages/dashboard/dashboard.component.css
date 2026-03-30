@@ -1,23 +1,23 @@
 .dashboard-container {
-  background: #020617;
-  min-height: 100vh;
-  padding: 12px;
-  color: white;
+    background: #020617;
+    min-height: 100vh;
+    padding: 12px;
+    color: white;
 }
 
 h2 {
-  font-size: 14px;
-  opacity: 0.7;
-  margin-bottom: 5px;
+    font-size: 14px;
+    opacity: 0.7;
+    margin-bottom: 5px;
 }
 
 .stats-grid,
 .devices-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
 }
 
 section {
-  margin-top: 15px;
+    margin-top: 15px;
 }

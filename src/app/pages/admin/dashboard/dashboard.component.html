@@ -29,7 +29,7 @@
         <mat-icon>bar_chart</mat-icon>
         <span>Analytics</span>
       </a>
-      <a class="nav-item" (click)="activeTab='workers'">
+      <a class="nav-item" (click)="activeTab='workers'; fetchAllUsers()">
         <mat-icon>manage_accounts</mat-icon>
         <span>Users & Accounts</span>
       </a>
@@ -69,7 +69,8 @@
           <span class="notif-badge" *ngIf="pendingWorkers.length > 0">{{ pendingWorkers.length }}</span>
         </button>
 
-        <button class="icon-btn" (click)="themeService.toggleTheme()" [matTooltip]="themeService.isLight ? 'Dark Mode' : 'Light Mode'">
+        <button class="icon-btn" (click)="themeService.toggleTheme()"
+          [matTooltip]="themeService.isLight ? 'Dark Mode' : 'Light Mode'">
           <mat-icon>{{ themeService.isLight ? 'dark_mode' : 'light_mode' }}</mat-icon>
         </button>
 
@@ -168,9 +169,8 @@
               </button>
             </div>
 
-            <div class="empty-state" *ngIf="pendingWorkers.length === 0">
-              <mat-icon>check_circle_outline</mat-icon>
-              <p>No pending registrations</p>
+            <div class="empty-state large" *ngIf="allUsersLoading">
+              <p>Loading users…</p>
             </div>
 
             <div class="worker-list" *ngIf="pendingWorkers.length > 0">
@@ -181,7 +181,8 @@
                   <span>{{ w.email }}</span>
                 </div>
                 <div class="worker-btns">
-                  <button class="btn-approve" (click)="validateWorker(w._id, 'approved')" [disabled]="validationLoading">
+                  <button class="btn-approve" (click)="validateWorker(w._id, 'approved')"
+                    [disabled]="validationLoading">
                     <mat-icon>check</mat-icon>
                   </button>
                   <button class="btn-reject" (click)="validateWorker(w._id, 'rejected')" [disabled]="validationLoading">
@@ -243,10 +244,12 @@
                 <td><span class="pill pill-amber">Pending</span></td>
                 <td>
                   <div class="action-btns">
-                    <button class="btn-approve-full" (click)="validateWorker(w._id, 'approved')" [disabled]="validationLoading">
+                    <button class="btn-approve-full" (click)="validateWorker(w._id, 'approved')"
+                      [disabled]="validationLoading">
                       <mat-icon>check_circle</mat-icon> Approve
                     </button>
-                    <button class="btn-reject-full" (click)="validateWorker(w._id, 'rejected')" [disabled]="validationLoading">
+                    <button class="btn-reject-full" (click)="validateWorker(w._id, 'rejected')"
+                      [disabled]="validationLoading">
                       <mat-icon>cancel</mat-icon> Reject
                     </button>
                   </div>
@@ -271,7 +274,7 @@
             <mat-icon>precision_manufacturing</mat-icon>
             <h3>No defective items recorded</h3>
             <p>The defect detection system has not been linked yet.<br>
-               Connect your robot to the backend and defective products will appear here automatically.</p>
+              Connect your robot to the backend and defective products will appear here automatically.</p>
             <div class="integration-status">
               <span class="pill pill-amber">⚙ Robot: Not Connected</span>
               <span class="pill pill-green">✓ Backend: Ready to receive data</span>
@@ -281,17 +284,71 @@
       </section>
 
       <!-- ═══ WORKERS / USERS TAB ═══ -->
+      <!-- ═══ WORKERS / USERS TAB ═══ -->
       <section *ngIf="activeTab === 'workers'" class="tab-content">
         <div class="section-header">
-          <h2>Users & Accounts</h2>
-          <p>Complete user account management will be available here.</p>
-        </div>
-        <div class="panel">
-          <div class="empty-state large">
-            <mat-icon>manage_accounts</mat-icon>
-            <h3>User Management</h3>
-            <p>Full user list (approved, rejected, suspended workers) will appear here once integrated.</p>
+          <div>
+            <h2>Users &amp; Accounts</h2>
+            <p>Delete any user to free their email for re-registration.</p>
           </div>
+          <button class="refresh-btn-lg" (click)="fetchAllUsers()">
+            <mat-icon>refresh</mat-icon> Load / Refresh
+          </button>
+        </div>
+
+        <div class="panel">
+          <div class="empty-state large" *ngIf="!allUsersLoading && allUsers.length === 0">
+            <mat-icon>manage_accounts</mat-icon>
+            <h3>No users loaded yet</h3>
+            <p>Click <strong>Load / Refresh</strong> to fetch all registered accounts.</p>
+          </div>
+
+          <div class="empty-state large" *ngIf="allUsersLoading">
+            <mat-icon>autorenew</mat-icon>
+            <p>Loading users…</p>
+          </div>
+
+          <table class="data-table" *ngIf="!allUsersLoading && allUsers.length > 0">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Registered</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let u of allUsers">
+                <td>
+                  <div class="cell-user">
+                    <div class="table-avatar">{{ u.username?.charAt(0)?.toUpperCase() }}</div>
+                    {{ u.username }}
+                  </div>
+                </td>
+                <td>{{ u.email }}</td>
+                <td>
+                  <span class="pill" [ngClass]="u.role === 'admin' ? 'pill-blue' : 'pill-gray'">{{ u.role }}</span>
+                </td>
+                <td>
+                  <span class="pill" [ngClass]="{
+              'pill-green':  u.status === 'approved',
+              'pill-amber':  u.status === 'pending',
+              'pill-red':    u.status === 'rejected'
+            }">{{ u.status }}</span>
+                </td>
+                <td>{{ u.createdAt | date:'dd MMM yyyy' }}</td>
+                <td>
+                  <button class="btn-reject-full" (click)="deleteUser(u._id, u.email)"
+                    [disabled]="deletingUserId === u._id">
+                    <mat-icon>delete_forever</mat-icon>
+                    {{ deletingUserId === u._id ? 'Deleting…' : 'Delete' }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
 

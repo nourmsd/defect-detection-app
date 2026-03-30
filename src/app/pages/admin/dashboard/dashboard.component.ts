@@ -25,6 +25,9 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   stats: any = { totalInspected: null, defective: null, efficiency: null };
   pendingWorkers: any[] = [];
   validationLoading = false;
+  allUsers: any[] = [];
+  allUsersLoading = false;
+  deletingUserId: string | null = null;
   systemStatus: string | null = null;
 
   private alertSubscription?: Subscription;
@@ -41,6 +44,7 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.fetchPendingWorkers();
     this.fetchStats();
+    this.fetchAllUsers();
 
     // Live clock
     this.clockSubscription = interval(1000).subscribe(() => {
@@ -114,7 +118,49 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
       error: () => { /* Stats not available — robot not connected yet */ }
     });
   }
+  fetchAllUsers() {
+    setTimeout(() => {
+      this.allUsersLoading = true;
+      const token = this.authService.getToken();
+      this.http.get<any[]>(`${environment.apiUrl}/admin/all-users`, {
+        headers: { Authorization: `Bearer ${token}` }
+      }).subscribe({
+        next: (data) => {
+          setTimeout(() => {
+            this.allUsers = data;
+            this.allUsersLoading = false;
+          });
+        },
+        error: (err) => {
+          setTimeout(() => {
+            this.snackBar.open('Could not load users: ' + (err.error?.message || 'Unknown error'), 'Close', {
+              duration: 5000, panelClass: ['error-snackbar']
+            });
+            this.allUsersLoading = false;
+          });
+        }
+      });
+    });
+  }
 
+  deleteUser(userId: string, email: string) {
+    if (!confirm(`Delete "${email}"? This frees the email for re-registration.`)) return;
+    const token = this.authService.getToken();
+    this.allUsers = this.allUsers.filter(u => u._id !== userId);
+    this.http.delete(`${environment.apiUrl}/admin/delete-user/${userId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    }).subscribe({
+      next: () => {
+        this.snackBar.open(`"${email}" deleted — email is free to re-register.`, 'Close', { duration: 5000 });
+      },
+      error: (err) => {
+        this.fetchAllUsers();
+        this.snackBar.open('Delete failed: ' + (err.error?.message || 'Unknown error'), 'Close', {
+          duration: 5000, panelClass: ['error-snackbar']
+        });
+      }
+    });
+  }
   logout() {
     this.authService.logout();
   }
