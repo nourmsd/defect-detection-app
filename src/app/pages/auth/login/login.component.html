@@ -1,0 +1,43 @@
+<div class="auth-container">
+  <mat-card class="auth-card glass-effect">
+    <mat-card-header>
+      <div>
+        <mat-card-title>QC System Login</mat-card-title>
+        <mat-card-subtitle>Enter your credentials to access the dashboard</mat-card-subtitle>
+      </div>
+    </mat-card-header>
+    
+    <mat-card-content>
+      <form [formGroup]="loginForm" (ngSubmit)="onSubmit()">
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Email</mat-label>
+          <input matInput formControlName="email" type="email">
+          <mat-error *ngIf="loginForm.get('email')?.hasError('required')">Email is required</mat-error>
+          <mat-error *ngIf="loginForm.get('email')?.hasError('email')">Please enter a valid email</mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Password</mat-label>
+          <input matInput formControlName="password" [type]="hidePassword ? 'password' : 'text'">
+          <button mat-icon-button matSuffix (click)="hidePassword = !hidePassword" [attr.aria-label]="'Hide password'" [attr.aria-pressed]="hidePassword" type="button">
+            <mat-icon>{{hidePassword ? 'visibility_off' : 'visibility'}}</mat-icon>
+          </button>
+          <mat-error *ngIf="loginForm.get('password')?.hasError('required')">Password is required</mat-error>
+        </mat-form-field>
+
+        <div class="actions">
+          <button mat-raised-button color="primary" type="submit" [disabled]="loginForm.invalid || loading" class="login-btn">
+            {{ loading ? 'Logging in...' : 'Login' }}
+          </button>
+        </div>
+      </form>
+    </mat-card-content>
+    
+    <mat-card-footer>
+      <div class="footer-links">
+        <a routerLink="/register">Register</a> | 
+        <a routerLink="/reset-password">Forgot Password?</a>
+      </div>
+    </mat-card-footer>
+  </mat-card>
+</div>

@@ -1,0 +1,104 @@
+<div class="dashboard-wrapper">
+  <mat-toolbar color="primary" class="glass-toolbar">
+    <span>Worker Dashboard - Quality Control</span>
+    <span class="spacer"></span>
+    <button mat-icon-button (click)="themeService.toggleTheme()" style="color: var(--neon-blue); margin-right: 8px;">
+      <mat-icon>{{ themeService.isLight ? 'dark_mode' : 'light_mode' }}</mat-icon>
+    </button>
+    <button mat-icon-button (click)="logout()">
+      <mat-icon>logout</mat-icon>
+    </button>
+  </mat-toolbar>
+
+  <div class="dashboard-grid">
+    <!-- Camera Section (Minimized) -->
+    <div class="grid-item camera-section glass-panel">
+      <div class="section-header">
+        <h3><mat-icon>videocam</mat-icon> Live Feed</h3>
+        <span class="status-badge"><span class="dot"></span> LIVE</span>
+      </div>
+      <div class="minimized-stream">
+        <div class="scanning-bar"></div>
+        <mat-icon class="stream-icon">sensors</mat-icon>
+      </div>
+    </div>
+
+    <!-- Stats Section (Moved from Admin) -->
+    <div class="grid-item stats-section">
+      <div class="stat-card glass-panel normal">
+        <div class="stat-icon"><mat-icon>check_circle</mat-icon></div>
+        <div class="stat-info">
+          <span class="label">Normal Rate</span>
+          <span class="value">{{normalRate | number:'1.1-1'}}%</span>
+        </div>
+      </div>
+      
+      <div class="stat-card glass-panel defected">
+        <div class="stat-icon"><mat-icon>warning</mat-icon></div>
+        <div class="stat-info">
+          <span class="label">Defect Rate</span>
+          <span class="value">{{defectRate | number:'1.1-1'}}%</span>
+        </div>
+      </div>
+
+      <div class="stat-card glass-panel total">
+        <div class="stat-icon"><mat-icon>assessment</mat-icon></div>
+        <div class="stat-info">
+          <span class="label">Total Rate</span>
+          <span class="value">{{totalInspections | number}} units</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alerts Section -->
+    <div class="grid-item alerts-section glass-panel">
+      <div class="section-header">
+        <h3><mat-icon>notifications</mat-icon> Real-Time Alerts</h3>
+      </div>
+      <div class="alerts-list">
+        <div *ngFor="let alert of alerts" class="alert-item" [ngClass]="alert.type">
+          <mat-icon>{{alert.type === 'defective' ? 'error' : 'info'}}</mat-icon>
+          <div class="alert-content">
+            <span class="alert-message">{{alert.message}}</span>
+            <span class="alert-time">{{alert.timestamp | date:'shortTime'}}</span>
+          </div>
+        </div>
+        <div *ngIf="alerts.length === 0" class="no-alerts">
+          No recent alerts
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Inspections (Table) -->
+    <div class="grid-item results-panel glass-panel">
+      <div class="section-header">
+        <h3><mat-icon>list_alt</mat-icon> Recent History</h3>
+      </div>
+      <div class="table-container">
+        <table mat-table [dataSource]="inspections" class="glass-table">
+          <ng-container matColumnDef="id">
+            <th mat-header-cell *matHeaderCellDef> ID </th>
+            <td mat-cell *matCellDef="let element" class="mono"> ..{{element.id.substring(element.id.length - 4)}} </td>
+          </ng-container>
+
+          <ng-container matColumnDef="label">
+            <th mat-header-cell *matHeaderCellDef> Result </th>
+            <td mat-cell *matCellDef="let element">
+              <span class="status-chip" [ngClass]="element.label === 'OK' ? 'ok' : 'defective'">
+                {{ element.label | uppercase }}
+              </span>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="timestamp">
+            <th mat-header-cell *matHeaderCellDef> Time </th>
+            <td mat-cell *matCellDef="let element"> {{element.timestamp | date:'shortTime'}} </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
