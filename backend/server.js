@@ -23,20 +23,41 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
+// Make io accessible to routes
+app.set('io', io);
+
 // Routes
 app.use('/api', authRoutes);
 app.use('/api', inspectionRoutes);
 
+// Health check endpoint (no auth required)
+app.get('/api/health', async (req, res) => {
+  const dbState = mongoose.connection.readyState;
+  const dbStatus = { 0: 'disconnected', 1: 'connected', 2: 'connecting', 3: 'disconnecting' };
+  res.json({
+    server: true,
+    database: dbState === 1,
+    databaseStatus: dbStatus[dbState] || 'unknown',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Socket.IO logic
+let connectedClients = 0;
+
 io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
+  connectedClients++;
+  console.log(`Client connected: ${socket.id} (total: ${connectedClients})`);
+
+  // Send connection count to all clients
+  io.emit('clientCount', connectedClients);
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    connectedClients--;
+    console.log(`Client disconnected: ${socket.id} (total: ${connectedClients})`);
+    io.emit('clientCount', connectedClients);
   });
-
-  // Real robot/AI alerts will be emitted here when integrated
-  // socket.emit('alert', ...) - triggered by actual detection events only
 });
 
 // Database connection
@@ -68,7 +89,7 @@ mongoose.connect(MONGO_URI, {
       const admin = new User({
         username: 'nourmessaoudi',
         email: fixedAdminEmail,
-        password: 'AdminIndustry2025', // Model pre-save hashes this
+        password: 'AdminIndustry2025',
         role: 'admin',
         status: 'approved'
       });

@@ -1,242 +1,231 @@
-<div class="dashboard-wrapper" [class.light-mode-worker]="themeService.isLight">
-  
-  <!-- Modern Industrial Header -->
-  <header class="dashboard-header">
-    <div class="brand-section">
-      <div class="logo-icon">
-        <mat-icon style="color: white;">precision_manufacturing</mat-icon>
+<div class="dashboard-shell" [class.light-mode-worker]="themeService.isLight">
+
+  <!-- ===== TOP BAR ===== -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="logo-mark">
+        <mat-icon>precision_manufacturing</mat-icon>
       </div>
-      <div class="brand-name">
-        <h2>Al Vision QC</h2>
-        <span class="subtitle">Intelligent Quality Control</span>
+      <div class="topbar-title">
+        <span class="app-name">AI Vision QC</span>
+        <span class="app-sub">Quality Control Station</span>
       </div>
     </div>
 
-    <div class="device-status">
-      <span>Raspberry Pi</span>
-      <span>Niryo Ned2</span>
-      <span>Siemens S7-1200</span>
+    <div class="topbar-center">
+      <div class="connection-pills">
+        <span class="conn-pill" [class.conn-up]="serverOnline" [class.conn-down]="!serverOnline">
+          <span class="conn-dot"></span> Server
+        </span>
+        <span class="conn-pill" [class.conn-up]="databaseOnline" [class.conn-down]="!databaseOnline">
+          <span class="conn-dot"></span> Database
+        </span>
+        <span class="conn-pill" [class.conn-up]="socketConnected" [class.conn-down]="!socketConnected">
+          <span class="conn-dot"></span> Live Feed
+        </span>
+      </div>
     </div>
 
-    <div class="clock-section">
-      <div class="status-indicator">
-        <div class="pulse-dot"></div>
-      </div>
-      <div class="digital-clock">{{currentTime}}</div>
+    <div class="topbar-right">
+      <span class="topbar-date">{{currentDate}}</span>
+      <span class="topbar-clock">{{currentTime}}</span>
 
-      <button mat-icon-button (click)="themeService.toggleTheme()" class="theme-toggle-btn">
+      <button mat-icon-button class="topbar-btn" (click)="themeService.toggleTheme()"
+              matTooltip="Toggle theme">
         <mat-icon>{{ themeService.isLight ? 'dark_mode' : 'light_mode' }}</mat-icon>
       </button>
-      
-      <button mat-icon-button (click)="logout()" style="color: rgba(255,255,255,0.5);">
+
+      <button mat-icon-button class="topbar-btn" (click)="logout()" matTooltip="Logout">
         <mat-icon>logout</mat-icon>
       </button>
     </div>
   </header>
 
-  <!-- Main Dashboard Grid -->
-  <div class="dashboard-grid">
-    
-    <!-- LEFT COLUMN: FEED & RAW DATA -->
-    <div class="grid-column">
-      
-      <!-- Live Feed -->
-      <div class="industrial-card">
-        <span class="card-label">Live Camera Feed</span>
-        <div class="camera-container">
-          <div class="scanning-bar"></div>
-          <div class="fps-overlay">FPS: {{fps}}</div>
-          
-          <img src="https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80&w=600" 
-               alt="Industrial Feed" style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px; opacity: 0.8;">
-          
-          <div class="no-model-warning">
-            <mat-icon>warning</mat-icon>
-            <span>MODEL NOT FOUND</span>
-          </div>
+  <!-- ===== MAIN CONTENT ===== -->
+  <main class="dashboard-main">
+
+    <!-- ROW 1: LIVE STATUS BANNER -->
+    <section class="status-banner"
+             [class.status-ok]="detectionStatus === 'OK'"
+             [class.status-defect]="detectionStatus === 'DEFECTIVE'"
+             [class.status-idle]="detectionStatus === 'WAITING'">
+      <div class="status-left">
+        <div class="status-icon-wrap">
+          <mat-icon *ngIf="detectionStatus === 'OK'">check_circle</mat-icon>
+          <mat-icon *ngIf="detectionStatus === 'DEFECTIVE'">error</mat-icon>
+          <mat-icon *ngIf="detectionStatus === 'WAITING'">hourglass_empty</mat-icon>
+        </div>
+        <div class="status-text">
+          <span class="status-label">Current Status</span>
+          <span class="status-value">
+            {{detectionStatus === 'WAITING' ? 'Waiting for Inspection' : detectionStatus === 'OK' ? 'CONFORMING' : 'DEFECT DETECTED'}}
+          </span>
         </div>
       </div>
-
-      <!-- Detection Status -->
-      <div class="industrial-card">
-        <span class="card-label">Detection</span>
-        <div class="detection-pill" 
-             [ngClass]="{'status-waiting': detectionStatus === 'WAITING', 
-                        'status-normal': detectionStatus === 'NORMAL', 
-                        'status-defective': detectionStatus === 'DEFECTIVE'}">
-          {{detectionStatus}}
+      <div class="status-right">
+        <div class="status-meta">
+          <span class="meta-label">Confidence</span>
+          <span class="meta-value" [style.color]="getConfidenceColor()">{{confidenceScore}}%</span>
+        </div>
+        <div class="status-meta">
+          <span class="meta-label">Last Scan</span>
+          <span class="meta-value">{{lastDetectionTime}}</span>
+        </div>
+        <div class="status-meta">
+          <span class="meta-label">Device</span>
+          <span class="meta-value">{{lastDetectionDevice}}</span>
         </div>
       </div>
+    </section>
 
-      <!-- Confidence Gauge -->
-      <div class="industrial-card">
-        <span class="card-label">Confidence</span>
-        <div class="gauge-wrapper">
-          <svg class="gauge-svg" viewBox="0 0 100 100">
-            <path class="gauge-bg" d="M 10 50 A 40 40 0 1 1 90 50"></path>
-            <path class="gauge-fill" d="M 10 50 A 40 40 0 1 1 90 50"
-                  [attr.stroke-dasharray]="(confidenceScore / 100 * 125.6) + ', 125.6'"></path>
-          </svg>
-          <div class="gauge-text">
-            <span class="gauge-value">{{confidenceScore}}%</span>
-            <span class="gauge-label">SCORE</span>
-          </div>
-        </div>
-        <div style="font-size: 0.6rem; text-align: center; opacity: 0.5;">MIN 40%</div>
-      </div>
-
-      <!-- Threshold Slider -->
-      <div class="industrial-card">
-        <span class="card-label">Confidence Score Bar</span>
-        <div style="margin-top: 1rem;">
-          <input type="range" style="width: 100%; accent-color: var(--accent-secondary);" value="85">
-          <div style="display: flex; justify-content: space-between; font-size: 0.7rem; opacity: 0.5; margin-top: 0.5rem;">
-            <span>0%</span>
-            <span>Threshold 85%</span>
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- CENTER COLUMN: KPI & REJECTION -->
-    <div class="grid-column">
-      
-      <!-- Counters Row -->
-      <div class="kpi-row">
-        <div class="kpi-card">
-          <span class="kpi-value">{{totalInspections}}</span>
+    <!-- ROW 2: KPI CARDS -->
+    <section class="kpi-strip">
+      <div class="kpi-card">
+        <mat-icon class="kpi-icon kpi-total">inventory_2</mat-icon>
+        <div class="kpi-data">
+          <span class="kpi-number">{{totalInspections}}</span>
           <span class="kpi-label">Total Inspected</span>
         </div>
-        <div class="kpi-card">
-          <span class="kpi-value success-text">{{normalCount}}</span>
+      </div>
+
+      <div class="kpi-card">
+        <mat-icon class="kpi-icon kpi-ok">check_circle</mat-icon>
+        <div class="kpi-data">
+          <span class="kpi-number kpi-ok-text">{{normalCount}}</span>
           <span class="kpi-label">Conforming</span>
         </div>
-        <div class="kpi-card">
-          <span class="kpi-value error-text">{{defectCount}}</span>
+      </div>
+
+      <div class="kpi-card">
+        <mat-icon class="kpi-icon kpi-defect">cancel</mat-icon>
+        <div class="kpi-data">
+          <span class="kpi-number kpi-defect-text">{{defectCount}}</span>
           <span class="kpi-label">Defective</span>
         </div>
       </div>
 
-      <!-- Rejection Rate Full Gauge -->
-      <div class="industrial-card">
-        <span class="card-label">Defect Rate</span>
-        <div class="gauge-wrapper">
-          <svg class="gauge-svg" style="width: 220px; height: 220px; transform: rotate(-90deg);" viewBox="0 0 100 100">
-            <circle class="gauge-bg" cx="50" cy="50" r="45" style="stroke-width: 8; opacity: 0.1;"></circle>
-            <circle cx="50" cy="50" r="45" fill="none" stroke="var(--accent-secondary)" 
-                    stroke-width="8" stroke-linecap="round"
-                    [attr.stroke-dasharray]="(rejectionRate / 100 * 282.7) + ', 282.7'"></circle>
+      <div class="kpi-card">
+        <div class="kpi-gauge-mini">
+          <svg viewBox="0 0 36 36" class="circular-chart">
+            <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+            <path class="circle-fill" [style.stroke]="getDefectRateColor()"
+                  [attr.stroke-dasharray]="defectRate + ', 100'"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+            <text x="18" y="21" class="gauge-pct">{{defectRate}}%</text>
           </svg>
-          <div class="gauge-text">
-            <h1 style="margin: 0; font-size: 3rem; font-weight: 800;">{{rejectionRate}}%</h1>
-            <span style="font-size: 0.7rem; opacity: 0.6; text-transform: uppercase;">Rejection Rate</span>
+        </div>
+        <div class="kpi-data">
+          <span class="kpi-number" [style.color]="getDefectRateColor()">{{defectRate}}%</span>
+          <span class="kpi-label">Defect Rate</span>
+        </div>
+      </div>
+
+      <div class="kpi-card kpi-today">
+        <mat-icon class="kpi-icon kpi-clock">today</mat-icon>
+        <div class="kpi-data">
+          <span class="kpi-number">{{todayTotal}}</span>
+          <span class="kpi-label">Today's Scans</span>
+          <span class="kpi-sub">
+            <span class="kpi-ok-text">{{todayOk}} OK</span> /
+            <span class="kpi-defect-text">{{todayDefective}} NG</span>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ROW 3: TWO-COLUMN LAYOUT -->
+    <section class="content-grid">
+
+      <!-- LEFT: INSPECTION HISTORY -->
+      <div class="panel history-panel">
+        <div class="panel-header">
+          <h3 class="panel-title">
+            <mat-icon>list_alt</mat-icon>
+            Recent Inspections
+          </h3>
+          <span class="panel-badge">Last {{inspections.length}}</span>
+        </div>
+        <div class="history-scroll">
+          <div *ngFor="let item of inspections; trackBy: trackById" class="history-row"
+               [class.row-ok]="item.label === 'OK'"
+               [class.row-defect]="item.label !== 'OK'">
+            <div class="row-status-dot"></div>
+            <span class="row-result">{{item.label === 'OK' ? 'OK' : 'NG'}}</span>
+            <span class="row-confidence">{{item.confidence}}%</span>
+            <span class="row-device">{{item.device || 'Cam 1'}}</span>
+            <span class="row-time">{{item.timestamp | date:'HH:mm:ss'}}</span>
+          </div>
+
+          <div *ngIf="inspections.length === 0" class="empty-state">
+            <mat-icon>search_off</mat-icon>
+            <p>No inspections yet</p>
           </div>
         </div>
       </div>
 
-      <!-- Last Detection Block -->
-      <div class="industrial-card">
-        <span class="card-label">Last Detection</span>
-        <div style="text-align: center; padding: 1.5rem 0;">
-          <h2 style="margin: 0; font-size: 2.5rem; letter-spacing: 2px;">{{lastDetectionTime}}</h2>
-          <span class="subtitle">Timestamp</span>
-        </div>
-      </div>
+      <!-- RIGHT: ALERTS & SYSTEM -->
+      <div class="side-panels">
 
-      <!-- History Link -->
-      <button class="history-button" routerLink="/admin-dashboard">
-        <mat-icon>visibility</mat-icon>
-        View Full History
-      </button>
-
-    </div>
-
-    <!-- RIGHT COLUMN: HISTORY & HEALTH -->
-    <div class="grid-column">
-      
-      <!-- Detection History Feed -->
-      <div class="industrial-card" style="flex: 1;">
-        <span class="card-label">Last 10 Detections</span>
-        <div class="history-list">
-          <div *ngFor="let item of inspections" class="history-item">
-            <div style="display: flex; align-items: center;">
-              <span class="res-dot" [style.background]="item.label === 'OK' ? 'var(--success)' : 'var(--error)'"></span>
-              <span>Robot_{{item.id.slice(-4)}}</span>
+        <!-- Alerts Panel -->
+        <div class="panel alerts-panel">
+          <div class="panel-header">
+            <h3 class="panel-title">
+              <mat-icon [class.alert-icon-active]="hasUnreadAlert">notifications</mat-icon>
+              Alerts
+            </h3>
+            <button *ngIf="hasUnreadAlert" class="dismiss-btn" (click)="dismissAlerts()">Clear</button>
+          </div>
+          <div class="alerts-scroll">
+            <div *ngFor="let a of alerts" class="alert-row">
+              <mat-icon class="alert-row-icon">warning</mat-icon>
+              <div class="alert-row-content">
+                <span class="alert-msg">{{a.message}}</span>
+                <span class="alert-time">{{a.time}}</span>
+              </div>
             </div>
-            <span style="opacity: 0.6; font-size: 0.75rem;">{{item.timestamp | date:'HH:mm:ss'}}</span>
-            <span [style.color]="item.label === 'OK' ? 'var(--success)' : 'var(--error)'" style="font-weight: 600;">
-              {{item.label | uppercase}}
-            </span>
-          </div>
-          <div *ngIf="inspections.length === 0" style="padding: 2rem; text-align: center; opacity: 0.4;">
-            <mat-icon style="font-size: 3rem;">query_stats</mat-icon>
-            <p>No telemetry data</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Processing Time -->
-      <div class="industrial-card">
-        <span class="card-label">Processing Time</span>
-        <div style="display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 1rem 0;">
-          <h3 style="margin: 0; font-size: 2rem; color: var(--accent-primary);">{{lastProcessingTime}}</h3>
-          <span class="subtitle">Seconds</span>
-          <div style="width: 100%; height: 4px; background: rgba(255,255,255,0.05); border-radius: 2px; margin-top: 1rem;">
-            <div [style.width]="(lastProcessingTime / 1.0 * 100) + '%'" 
-                 style="height: 100%; background: var(--accent-primary); border-radius: 2px; transition: width 0.5s;"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- System Health -->
-      <div class="industrial-card">
-        <span class="card-label">System Links</span>
-        <div class="health-list">
-          <div class="health-item">
-            <span>PLC Status</span>
-            <div class="health-status">
-              <span style="opacity: 0.6;">{{systemLinks.plc ? 'Connected' : 'Not Connected'}}</span>
-              <span class="status-dot" [ngClass]="systemLinks.plc ? 'status-up' : 'status-down'"></span>
-            </div>
-          </div>
-          <div class="health-item">
-            <span>MQTT Broker</span>
-            <div class="health-status">
-              <span style="opacity: 0.6;">Connected</span>
-              <span class="status-dot status-up"></span>
-            </div>
-          </div>
-          <div class="health-item">
-            <span>AI Inference Model</span>
-            <div class="health-status">
-              <span style="opacity: 0.6;">Loaded</span>
-              <span class="status-dot status-up"></span>
-            </div>
-          </div>
-          <div class="health-item">
-            <span>Vision Camera</span>
-            <div class="health-status">
-              <span style="opacity: 0.6;">Active</span>
-              <span class="status-dot status-up"></span>
-            </div>
-          </div>
-          <div class="health-item">
-            <span>MongoDB Data</span>
-            <div class="health-status">
-              <span style="opacity: 0.6;">Connected</span>
-              <span class="status-dot status-up"></span>
+            <div *ngIf="alerts.length === 0" class="empty-state small">
+              <mat-icon>notifications_none</mat-icon>
+              <p>No alerts</p>
             </div>
           </div>
         </div>
+
+        <!-- System Status Panel -->
+        <div class="panel system-panel">
+          <div class="panel-header">
+            <h3 class="panel-title">
+              <mat-icon>settings_ethernet</mat-icon>
+              System Status
+            </h3>
+          </div>
+          <div class="system-rows">
+            <div class="sys-row">
+              <span>Backend Server</span>
+              <span class="sys-status" [class.sys-up]="serverOnline" [class.sys-down]="!serverOnline">
+                {{serverOnline ? 'Online' : 'Offline'}}
+              </span>
+            </div>
+            <div class="sys-row">
+              <span>MongoDB</span>
+              <span class="sys-status" [class.sys-up]="databaseOnline" [class.sys-down]="!databaseOnline">
+                {{databaseOnline ? 'Connected' : 'Disconnected'}}
+              </span>
+            </div>
+            <div class="sys-row">
+              <span>WebSocket</span>
+              <span class="sys-status" [class.sys-up]="socketConnected" [class.sys-down]="!socketConnected">
+                {{socketConnected ? 'Connected' : 'Disconnected'}}
+              </span>
+            </div>
+            <div class="sys-row">
+              <span>Last Hour Volume</span>
+              <span class="sys-value">{{lastHourCount}} scans</span>
+            </div>
+          </div>
+        </div>
+
       </div>
+    </section>
 
-      <button class="reset-button" (click)="resetCounters()">
-        <mat-icon style="font-size: 1.2rem; vertical-align: middle;">restart_alt</mat-icon>
-        Reset Counters
-      </button>
-
-    </div>
-
-  </div>
+  </main>
 </div>
