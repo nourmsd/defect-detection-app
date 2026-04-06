@@ -8,6 +8,8 @@ export interface Inspection {
   id: string;
   label: 'OK' | 'defective';
   timestamp: string;
+  confidence?: number;       // 0–1 or 0–100 from AI model
+  processing_time?: number;  // seconds
 }
 
 @Injectable({

@@ -1,14 +1,7 @@
-/* Reuse styles from login or import common styles */
 @import '../login/login.component.css';
 
-mat-form-field select {
-  background: transparent;
-  color: white;
-  border: none;
-  width: 100%;
-}
-
-mat-form-field option {
-  background: #302b63;
-  color: white;
+.login-select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
 }

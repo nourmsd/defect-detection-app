@@ -1,0 +1,11 @@
+.inspection {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px;
+  background: #1e293b;
+  border-radius: 8px;
+  margin-bottom: 5px;
+}
+
+.ok { color: #22c55e; }
+.defect { color: #ef4444; }

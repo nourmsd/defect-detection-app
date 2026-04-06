@@ -1,0 +1,40 @@
+@import '../dashboard/dashboard.component.css';
+
+.full-width-table {
+  width: 100%;
+  background: transparent !important;
+}
+
+.glass-table {
+  border-radius: 12px;
+  overflow: hidden;
+  color: white !important;
+}
+
+::ng-deep .mat-mdc-header-cell {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: white !important;
+  font-weight: bold !important;
+}
+
+::ng-deep .mat-mdc-cell {
+  color: rgba(255, 255, 255, 0.8) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+.result-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+.result-badge.normal {
+  background: rgba(56, 239, 125, 0.2);
+  color: #38ef7d;
+}
+
+.result-badge.defective {
+  background: rgba(255, 77, 77, 0.2);
+  color: #ff4d4d;
+}

@@ -1,242 +1,301 @@
-<div class="dashboard-wrapper" [class.light-mode-worker]="themeService.isLight">
-  
-  <!-- Modern Industrial Header -->
-  <header class="dashboard-header">
-    <div class="brand-section">
-      <div class="logo-icon">
-        <mat-icon style="color: white;">precision_manufacturing</mat-icon>
-      </div>
-      <div class="brand-name">
-        <h2>Al Vision QC</h2>
-        <span class="subtitle">Intelligent Quality Control</span>
+<div class="qc-root" [class.qc-dark]="!themeService.isLight">
+
+  <!-- ═══ TOP BAR ═══ -->
+  <header class="qc-topbar">
+    <div class="qc-brand">
+      <div class="qc-logo"><mat-icon>precision_manufacturing</mat-icon></div>
+      <div class="qc-brand-text">
+        <span class="qc-brand-name">AI Vision QC</span>
+        <span class="qc-brand-sub">INTELLIGENT QUALITY CONTROL</span>
       </div>
     </div>
-
-    <div class="device-status">
-      <span>Raspberry Pi</span>
-      <span>Niryo Ned2</span>
-      <span>Siemens S7-1200</span>
+    <div class="qc-devices">
+      Raspberry Pi &nbsp;·&nbsp; Niryo Ned2 &nbsp;·&nbsp; Siemens S7-1200
     </div>
-
-    <div class="clock-section">
-      <div class="status-indicator">
-        <div class="pulse-dot"></div>
-      </div>
-      <div class="digital-clock">{{currentTime}}</div>
-
-      <button mat-icon-button (click)="themeService.toggleTheme()" class="theme-toggle-btn">
+    <div class="qc-topbar-right">
+      <span class="qc-live-dot"></span>
+      <span class="qc-clock">{{ currentTime }}</span>
+      <button mat-icon-button (click)="themeService.toggleTheme()" class="qc-icon-btn">
         <mat-icon>{{ themeService.isLight ? 'dark_mode' : 'light_mode' }}</mat-icon>
       </button>
-      
-      <button mat-icon-button (click)="logout()" style="color: rgba(255,255,255,0.5);">
+      <button mat-icon-button (click)="logout()" class="qc-icon-btn">
         <mat-icon>logout</mat-icon>
       </button>
     </div>
   </header>
 
-  <!-- Main Dashboard Grid -->
-  <div class="dashboard-grid">
-    
-    <!-- LEFT COLUMN: FEED & RAW DATA -->
-    <div class="grid-column">
-      
-      <!-- Live Feed -->
-      <div class="industrial-card">
-        <span class="card-label">Live Camera Feed</span>
-        <div class="camera-container">
-          <div class="scanning-bar"></div>
-          <div class="fps-overlay">FPS: {{fps}}</div>
-          
-          <img src="https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80&w=600" 
-               alt="Industrial Feed" style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px; opacity: 0.8;">
-          
-          <div class="no-model-warning">
-            <mat-icon>warning</mat-icon>
-            <span>MODEL NOT FOUND</span>
+  <!-- ═══ BODY ═══ -->
+  <div class="qc-body">
+
+    <!-- ── LEFT COLUMN ── -->
+    <div class="qc-left">
+
+      <!-- 1. LIVE CAMERA FEED -->
+      <div class="qc-card qc-camera-card">
+        <div class="qc-field-label">LIVE CAMERA FEED
+          <span class="qc-tooltip-icon" matTooltip="Live video stream from the Ned2 robot's onboard camera. The robot positions itself above the conveyor belt to capture each package as it arrives.">?</span>
+        </div>
+        <div class="qc-camera-box">
+          <span class="c-tl"></span><span class="c-tr"></span>
+          <span class="c-bl"></span><span class="c-br"></span>
+          <span class="qc-fps-badge">FPS: {{ fps }}</span>
+
+          <!-- Live MJPEG stream from Niryo robot -->
+          <img class="qc-stream-img"
+               [src]="cameraStreamUrl"
+               [class.hidden]="!streamActive"
+               (load)="onStreamLoad()"
+               (error)="onStreamError()"
+               alt="Niryo camera stream">
+
+          <!-- Placeholder shown when stream is not yet available -->
+          <div class="qc-cam-placeholder" [class.hidden]="streamActive">
+            <mat-icon>videocam_off</mat-icon>
+            <span>Connecting to Niryo camera…</span>
+            <span class="qc-cam-url">{{ cameraStreamUrl }}</span>
+          </div>
+
+          <div class="qc-scanline"></div>
+
+          <div class="qc-model-badge"
+               [class.badge-ok]="detectionStatus === 'NORMAL'"
+               [class.badge-nok]="detectionStatus === 'DEFECTIVE'">
+            <mat-icon *ngIf="detectionStatus === 'WAITING'">hourglass_empty</mat-icon>
+            <mat-icon *ngIf="detectionStatus === 'NORMAL'">check_circle</mat-icon>
+            <mat-icon *ngIf="detectionStatus === 'DEFECTIVE'">warning</mat-icon>
+            <span *ngIf="detectionStatus === 'WAITING'">WAITING</span>
+            <span *ngIf="detectionStatus === 'NORMAL'">CONFORMING</span>
+            <span *ngIf="detectionStatus === 'DEFECTIVE'">DEFECTIVE</span>
           </div>
         </div>
-      </div>
-
-      <!-- Detection Status -->
-      <div class="industrial-card">
-        <span class="card-label">Detection</span>
-        <div class="detection-pill" 
-             [ngClass]="{'status-waiting': detectionStatus === 'WAITING', 
-                        'status-normal': detectionStatus === 'NORMAL', 
-                        'status-defective': detectionStatus === 'DEFECTIVE'}">
-          {{detectionStatus}}
+        <div class="qc-cam-footer">
+          <span>FPS: {{ fps }}</span>
+          <span class="qc-mqtt-badge">MQTT: {{ systemLinks.mqtt ? 'Connected' : 'Disconnected' }}</span>
         </div>
       </div>
 
-      <!-- Confidence Gauge -->
-      <div class="industrial-card">
-        <span class="card-label">Confidence</span>
-        <div class="gauge-wrapper">
-          <svg class="gauge-svg" viewBox="0 0 100 100">
-            <path class="gauge-bg" d="M 10 50 A 40 40 0 1 1 90 50"></path>
-            <path class="gauge-fill" d="M 10 50 A 40 40 0 1 1 90 50"
-                  [attr.stroke-dasharray]="(confidenceScore / 100 * 125.6) + ', 125.6'"></path>
-          </svg>
-          <div class="gauge-text">
-            <span class="gauge-value">{{confidenceScore}}%</span>
-            <span class="gauge-label">SCORE</span>
+      <!-- 2. DETECTION + CONFIDENCE side by side -->
+      <div class="qc-row-two">
+
+        <!-- DETECTION -->
+        <div class="qc-card qc-detection-card">
+          <div class="qc-field-label">DETECTION
+            <span class="qc-tooltip-icon" matTooltip="AI model's binary decision: CONFORMING (good product) or DEFECTIVE (anomaly detected). WAITING = conveyor is idle.">?</span>
           </div>
-        </div>
-        <div style="font-size: 0.6rem; text-align: center; opacity: 0.5;">MIN 40%</div>
-      </div>
-
-      <!-- Threshold Slider -->
-      <div class="industrial-card">
-        <span class="card-label">Confidence Score Bar</span>
-        <div style="margin-top: 1rem;">
-          <input type="range" style="width: 100%; accent-color: var(--accent-secondary);" value="85">
-          <div style="display: flex; justify-content: space-between; font-size: 0.7rem; opacity: 0.5; margin-top: 0.5rem;">
-            <span>0%</span>
-            <span>Threshold 85%</span>
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- CENTER COLUMN: KPI & REJECTION -->
-    <div class="grid-column">
-      
-      <!-- Counters Row -->
-      <div class="kpi-row">
-        <div class="kpi-card">
-          <span class="kpi-value">{{totalInspections}}</span>
-          <span class="kpi-label">Total Inspected</span>
-        </div>
-        <div class="kpi-card">
-          <span class="kpi-value success-text">{{normalCount}}</span>
-          <span class="kpi-label">Conforming</span>
-        </div>
-        <div class="kpi-card">
-          <span class="kpi-value error-text">{{defectCount}}</span>
-          <span class="kpi-label">Defective</span>
-        </div>
-      </div>
-
-      <!-- Rejection Rate Full Gauge -->
-      <div class="industrial-card">
-        <span class="card-label">Defect Rate</span>
-        <div class="gauge-wrapper">
-          <svg class="gauge-svg" style="width: 220px; height: 220px; transform: rotate(-90deg);" viewBox="0 0 100 100">
-            <circle class="gauge-bg" cx="50" cy="50" r="45" style="stroke-width: 8; opacity: 0.1;"></circle>
-            <circle cx="50" cy="50" r="45" fill="none" stroke="var(--accent-secondary)" 
-                    stroke-width="8" stroke-linecap="round"
-                    [attr.stroke-dasharray]="(rejectionRate / 100 * 282.7) + ', 282.7'"></circle>
-          </svg>
-          <div class="gauge-text">
-            <h1 style="margin: 0; font-size: 3rem; font-weight: 800;">{{rejectionRate}}%</h1>
-            <span style="font-size: 0.7rem; opacity: 0.6; text-transform: uppercase;">Rejection Rate</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Last Detection Block -->
-      <div class="industrial-card">
-        <span class="card-label">Last Detection</span>
-        <div style="text-align: center; padding: 1.5rem 0;">
-          <h2 style="margin: 0; font-size: 2.5rem; letter-spacing: 2px;">{{lastDetectionTime}}</h2>
-          <span class="subtitle">Timestamp</span>
-        </div>
-      </div>
-
-      <!-- History Link -->
-      <button class="history-button" routerLink="/admin-dashboard">
-        <mat-icon>visibility</mat-icon>
-        View Full History
-      </button>
-
-    </div>
-
-    <!-- RIGHT COLUMN: HISTORY & HEALTH -->
-    <div class="grid-column">
-      
-      <!-- Detection History Feed -->
-      <div class="industrial-card" style="flex: 1;">
-        <span class="card-label">Last 10 Detections</span>
-        <div class="history-list">
-          <div *ngFor="let item of inspections" class="history-item">
-            <div style="display: flex; align-items: center;">
-              <span class="res-dot" [style.background]="item.label === 'OK' ? 'var(--success)' : 'var(--error)'"></span>
-              <span>Robot_{{item.id.slice(-4)}}</span>
+          <div class="qc-detection-body">
+            <div class="qc-det-box"
+                 [class.det-ok]="detectionStatus === 'NORMAL'"
+                 [class.det-nok]="detectionStatus === 'DEFECTIVE'">
             </div>
-            <span style="opacity: 0.6; font-size: 0.75rem;">{{item.timestamp | date:'HH:mm:ss'}}</span>
-            <span [style.color]="item.label === 'OK' ? 'var(--success)' : 'var(--error)'" style="font-weight: 600;">
-              {{item.label | uppercase}}
-            </span>
-          </div>
-          <div *ngIf="inspections.length === 0" style="padding: 2rem; text-align: center; opacity: 0.4;">
-            <mat-icon style="font-size: 3rem;">query_stats</mat-icon>
-            <p>No telemetry data</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Processing Time -->
-      <div class="industrial-card">
-        <span class="card-label">Processing Time</span>
-        <div style="display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 1rem 0;">
-          <h3 style="margin: 0; font-size: 2rem; color: var(--accent-primary);">{{lastProcessingTime}}</h3>
-          <span class="subtitle">Seconds</span>
-          <div style="width: 100%; height: 4px; background: rgba(255,255,255,0.05); border-radius: 2px; margin-top: 1rem;">
-            <div [style.width]="(lastProcessingTime / 1.0 * 100) + '%'" 
-                 style="height: 100%; background: var(--accent-primary); border-radius: 2px; transition: width 0.5s;"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- System Health -->
-      <div class="industrial-card">
-        <span class="card-label">System Links</span>
-        <div class="health-list">
-          <div class="health-item">
-            <span>PLC Status</span>
-            <div class="health-status">
-              <span style="opacity: 0.6;">{{systemLinks.plc ? 'Connected' : 'Not Connected'}}</span>
-              <span class="status-dot" [ngClass]="systemLinks.plc ? 'status-up' : 'status-down'"></span>
-            </div>
-          </div>
-          <div class="health-item">
-            <span>MQTT Broker</span>
-            <div class="health-status">
-              <span style="opacity: 0.6;">Connected</span>
-              <span class="status-dot status-up"></span>
-            </div>
-          </div>
-          <div class="health-item">
-            <span>AI Inference Model</span>
-            <div class="health-status">
-              <span style="opacity: 0.6;">Loaded</span>
-              <span class="status-dot status-up"></span>
-            </div>
-          </div>
-          <div class="health-item">
-            <span>Vision Camera</span>
-            <div class="health-status">
-              <span style="opacity: 0.6;">Active</span>
-              <span class="status-dot status-up"></span>
-            </div>
-          </div>
-          <div class="health-item">
-            <span>MongoDB Data</span>
-            <div class="health-status">
-              <span style="opacity: 0.6;">Connected</span>
-              <span class="status-dot status-up"></span>
+            <div class="qc-det-status"
+                 [class.det-status-ok]="detectionStatus === 'NORMAL'"
+                 [class.det-status-nok]="detectionStatus === 'DEFECTIVE'">
+              {{ detectionStatus === 'NORMAL' ? 'CONFORMING' : detectionStatus }}
             </div>
           </div>
         </div>
+
+        <!-- CONFIDENCE GAUGE — score comes from AI model via backend -->
+        <div class="qc-card qc-confidence-card">
+          <div class="qc-field-label">CONFIDENCE
+            <span class="qc-tooltip-icon" matTooltip="How certain the AI model is about its decision (0–100%). Score is provided by the robot's AI inference engine — no manual input.">?</span>
+          </div>
+          <div class="qc-gauge-wrap">
+            <svg class="qc-gauge-svg" viewBox="0 0 100 60">
+              <path class="qc-gauge-bg" d="M 10 55 A 40 40 0 0 1 90 55"/>
+              <path class="qc-gauge-fill"
+                    d="M 10 55 A 40 40 0 0 1 90 55"
+                    [style.strokeDasharray]="(confidenceScore / 100 * 125.6) + ' 125.6'"
+                    [class.gauge-green]="detectionStatus === 'NORMAL'"
+                    [class.gauge-red]="detectionStatus === 'DEFECTIVE'"/>
+            </svg>
+            <div class="qc-gauge-center">
+              <span class="qc-gauge-val"
+                    [class.val-green]="detectionStatus === 'NORMAL'"
+                    [class.val-red]="detectionStatus === 'DEFECTIVE'">
+                {{ detectionStatus !== 'WAITING' ? confidenceScore : '—' }}
+              </span>
+              <span class="qc-gauge-lbl">AI SCORE</span>
+            </div>
+          </div>
+          <div class="qc-gauge-min">FROM AI MODEL</div>
+        </div>
+
       </div>
 
-      <button class="reset-button" (click)="resetCounters()">
-        <mat-icon style="font-size: 1.2rem; vertical-align: middle;">restart_alt</mat-icon>
-        Reset Counters
-      </button>
+    </div><!-- /left -->
 
-    </div>
+    <!-- ── RIGHT AREA ── -->
+    <div class="qc-right">
 
-  </div>
+      <!-- TOP ROW: 3 STAT CARDS -->
+      <div class="qc-stats-row">
+
+        <div class="qc-stat-card">
+          <div class="qc-stat-help">
+            <span class="qc-tooltip-icon sm" matTooltip="Total number of packages inspected since the session started or last reset.">?</span>
+          </div>
+          <div class="qc-stat-circle qc-circle-blue"><span>{{ totalInspections }}</span></div>
+          <div class="qc-stat-label">TOTAL INSPECTED</div>
+        </div>
+
+        <div class="qc-stat-card">
+          <div class="qc-stat-help">
+            <span class="qc-tooltip-icon sm" matTooltip="Packages that passed AI quality inspection and were placed in the conforming storage zone.">?</span>
+          </div>
+          <div class="qc-stat-circle qc-circle-green"><span>{{ normalCount }}</span></div>
+          <div class="qc-stat-label">CONFORMING</div>
+        </div>
+
+        <div class="qc-stat-card">
+          <div class="qc-stat-help">
+            <span class="qc-tooltip-icon sm" matTooltip="Packages rejected by the AI model. The robot places them in the reject bin.">?</span>
+          </div>
+          <div class="qc-stat-circle qc-circle-red"><span>{{ defectCount }}</span></div>
+          <div class="qc-stat-label">DEFECTIVE</div>
+        </div>
+
+      </div>
+
+      <!-- MID ROW: DEFECT RATE + LAST 20 -->
+      <div class="qc-mid-row">
+
+        <!-- DEFECT RATE donut -->
+        <div class="qc-card qc-defect-card">
+          <div class="qc-field-label">DEFECT RATE
+            <span class="qc-tooltip-icon" matTooltip="Percentage of inspected packages that were rejected. Green ≤5%, amber 5–15%, red >15%.">?</span>
+          </div>
+          <div class="qc-donut-wrap">
+            <svg class="qc-donut-svg" viewBox="0 0 100 100">
+              <circle class="qc-donut-bg" cx="50" cy="50" r="38"/>
+              <circle class="qc-donut-fill" cx="50" cy="50" r="38"
+                      [attr.stroke-dasharray]="(rejectionRate / 100 * 238.76) + ' 238.76'"
+                      [class.donut-green]="rejectionRate <= 5"
+                      [class.donut-amber]="rejectionRate > 5 && rejectionRate <= 15"
+                      [class.donut-red]="rejectionRate > 15"/>
+            </svg>
+            <div class="qc-donut-center">
+              <span class="qc-donut-pct"
+                    [class.pct-green]="rejectionRate <= 5"
+                    [class.pct-amber]="rejectionRate > 5 && rejectionRate <= 15"
+                    [class.pct-red]="rejectionRate > 15">
+                {{ rejectionRate }}%
+              </span>
+              <span class="qc-donut-sub">REJECTION</span>
+            </div>
+          </div>
+          <div class="qc-defect-footer">REJECTION RATE</div>
+        </div>
+
+        <!-- LAST 20 DETECTIONS -->
+        <div class="qc-card qc-hist-card">
+          <div class="qc-field-label">LAST 20 DETECTIONS
+            <span class="qc-tooltip-icon" matTooltip="Visual timeline of the last 20 inspected packages. Green = conforming, red = defective.">?</span>
+          </div>
+          <div class="qc-hist-body">
+            <div class="qc-hist-items">
+              <ng-container *ngIf="inspections.length > 0">
+                <div *ngFor="let item of inspections.slice(0,20)" class="qc-hist-dot-wrap">
+                  <span class="qc-hist-dot"
+                        [class.dot-ok]="item.label === 'OK'"
+                        [class.dot-nok]="item.label !== 'OK'"
+                        [title]="(item.label === 'OK' ? 'Conforming' : 'Defective') + ' · ' + (item.timestamp | date:'HH:mm:ss')">
+                  </span>
+                </div>
+              </ng-container>
+              <ng-container *ngIf="inspections.length === 0">
+                <span *ngFor="let i of [1,2,3,4,5,6,7,8,9,10]" class="qc-hist-dot dot-empty"></span>
+              </ng-container>
+            </div>
+            <div class="qc-hist-legend">
+              <span class="qc-legend-item">
+                <span class="qc-leg-dot" style="background:#22c55e"></span>Conforming
+              </span>
+              <span class="qc-legend-item">
+                <span class="qc-leg-dot" style="background:#ef4444"></span>Defective
+              </span>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /mid-row -->
+
+      <!-- BOTTOM ROW -->
+      <div class="qc-bottom-row">
+
+        <!-- LAST DETECTION -->
+        <div class="qc-card qc-lastdet-card">
+          <div class="qc-field-label">LAST DETECTION
+            <span class="qc-tooltip-icon" matTooltip="Exact timestamp of the most recently inspected package.">?</span>
+          </div>
+          <div class="qc-lastdet-body">
+            <div class="qc-lastdet-val">{{ lastDetectionTime }}</div>
+            <div class="qc-lastdet-sub">TIMESTAMP</div>
+          </div>
+        </div>
+
+        <!-- PROCESSING TIME -->
+        <div class="qc-card qc-proctime-card">
+          <div class="qc-field-label">PROCESSING TIME
+            <span class="qc-tooltip-icon" matTooltip="Time in seconds for the Raspberry Pi to capture, run AI inference, and return a decision.">?</span>
+          </div>
+          <div class="qc-proctime-body">
+            <div class="qc-proctime-val">{{ lastProcessingTime }}</div>
+            <div class="qc-proctime-sub">SECONDS</div>
+          </div>
+        </div>
+
+        <!-- SYSTEM LINKS -->
+        <div class="qc-card qc-links-card">
+          <div class="qc-field-label">SYSTEM LINKS
+            <span class="qc-tooltip-icon" matTooltip="Real-time status of all subsystem connections. All links must be green before pressing Start.">?</span>
+          </div>
+          <div class="qc-links-list">
+            <div class="qc-link-row">
+              <span class="qc-link-dot" [class.link-red]="!systemLinks.plc" [class.link-green]="systemLinks.plc"></span>
+              <span>PLC: {{ systemLinks.plc ? 'Connected' : 'Not connected' }}</span>
+            </div>
+            <div class="qc-link-row">
+              <span class="qc-link-dot" [class.link-green]="systemLinks.mqtt" [class.link-red]="!systemLinks.mqtt"></span>
+              <span>MQTT: {{ systemLinks.mqtt ? 'Connected' : 'Disconnected' }}</span>
+            </div>
+            <div class="qc-link-row">
+              <span class="qc-link-dot" [class.link-green]="systemLinks.aiModel" [class.link-red]="!systemLinks.aiModel"></span>
+              <span>AI Model: {{ systemLinks.aiModel ? 'Loaded' : 'Not loaded' }}</span>
+            </div>
+            <div class="qc-link-row">
+              <span class="qc-link-dot" [class.link-green]="systemLinks.camera" [class.link-red]="!systemLinks.camera"></span>
+              <span>Camera: {{ systemLinks.camera ? 'Active' : 'Inactive' }}</span>
+            </div>
+            <div class="qc-link-row">
+              <span class="qc-link-dot" [class.link-green]="systemLinks.mongodb" [class.link-red]="!systemLinks.mongodb"></span>
+              <span>MongoDB: {{ systemLinks.mongodb ? 'Connected' : 'Disconnected' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- RESET -->
+        <div class="qc-card qc-reset-card">
+          <button class="qc-reset-btn" (click)="resetCounters()">
+            <mat-icon>restart_alt</mat-icon>
+            Reset Counters
+          </button>
+        </div>
+
+      </div><!-- /bottom-row -->
+
+      <!-- INSPECTION HISTORY FULL ROW -->
+      <div class="qc-card qc-history-card">
+        <div class="qc-field-label">INSPECTION HISTORY
+          <span class="qc-tooltip-icon" matTooltip="Opens the full paginated history log with filters by date, product type, and result.">?</span>
+        </div>
+        <button class="qc-history-btn" routerLink="/admin-dashboard">
+          <mat-icon>history</mat-icon>
+          View Full History
+        </button>
+      </div>
+
+    </div><!-- /right -->
+  </div><!-- /body -->
+
 </div>
