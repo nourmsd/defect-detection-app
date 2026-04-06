@@ -42,3 +42,11 @@ __screenshots__/
 # System files
 .DS_Store
 Thumbs.db
+
+# Python virtual environment
+niryo_env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
