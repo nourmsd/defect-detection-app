@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs wc:*)",
+      "Bash(grep -r \"mqtt\\\\|MQTT\" /c/Users/nourm/smart-quality-control-frontend/src --include=*.ts)",
+      "Bash(cat EOF PROJECT STRUCTURE OVERVIEW EOF find /c/Users/nourm/smart-quality-control-frontend -type f \\\\\\(-name *.ts -o -name *.js -o -name *.json -o -name *.html -o -name *.css \\\\\\) ! -path */node_modules/*)",
+      "Bash(npx ng:*)",
+      "mcp__Claude_Preview__preview_start"
+    ]
+  }
+}

@@ -2,8 +2,40 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const http = require('http');
+const path = require('path');
+const { spawn } = require('child_process');
 const { Server } = require('socket.io');
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+
+// ── Auto-start Niryo MJPEG stream (port 5001) ────────────────────────────────
+// Streams the Niryo Ned2 robot camera to the Angular dashboard.
+// Requires: pip install flask flask-cors opencv-python pyniryo
+// Safe to run even when the robot is offline — serves a placeholder until connected.
+function startNiryoStream() {
+  const scriptPath = path.join(__dirname, 'niryo_stream.py');
+
+  // Try python3 first, fall back to python
+  const pythonCmd = process.platform === 'win32' ? 'py' : 'python3';
+  const proc = spawn(pythonCmd, [scriptPath], {
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+
+  proc.stdout.on('data', (d) => process.stdout.write(`[niryo_stream] ${d}`));
+  proc.stderr.on('data', (d) => process.stderr.write(`[niryo_stream] ${d}`));
+
+  proc.on('error', (err) => {
+    console.warn(`[niryo_stream] Could not start — Python not found or pyniryo missing: ${err.message}`);
+  });
+
+  proc.on('close', (code) => {
+    if (code !== 0) {
+      console.warn(`[niryo_stream] Exited (code ${code}), retrying in 8 s…`);
+      setTimeout(startNiryoStream, 8000);
+    }
+  });
+}
+
+startNiryoStream();
 
 const authRoutes = require('./routes/auth');
 const inspectionRoutes = require('./routes/inspection');

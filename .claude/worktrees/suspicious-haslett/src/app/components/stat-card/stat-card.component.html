@@ -1,0 +1,26 @@
+<div class="card" [ngClass]="color">
+
+  <div class="card-header">{{ title }}</div>
+
+  <!-- Normal number -->
+  <div *ngIf="type !== 'circle'" class="value">
+    {{ value }}
+  </div>
+
+  <!-- Circular gauge -->
+  <div *ngIf="type === 'circle'" class="gauge">
+    <svg viewBox="0 0 36 36">
+      <path
+        class="bg"
+        d="M18 2 a 16 16 0 0 1 0 32 a 16 16 0 0 1 0 -32"
+      />
+      <path
+        class="progress"
+        [attr.stroke-dasharray]="value + ', 100'"
+        d="M18 2 a 16 16 0 0 1 0 32 a 16 16 0 0 1 0 -32"
+      />
+    </svg>
+    <div class="gauge-text">{{ value }}%</div>
+  </div>
+
+</div>
