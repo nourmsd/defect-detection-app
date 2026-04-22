@@ -15,6 +15,8 @@ router.post('/validate-worker', authMiddleware, roleMiddleware(['admin']), authC
 // Admin workers availability
 router.get('/admin/active-workers', authMiddleware, roleMiddleware(['admin']), authController.getActiveWorkers);
 
-module.exports = router;
+// User management
 router.get('/admin/all-users', authMiddleware, roleMiddleware(['admin']), authController.getAllUsers);
 router.delete('/admin/delete-user/:userId', authMiddleware, roleMiddleware(['admin']), authController.deleteUser);
+
+module.exports = router;
