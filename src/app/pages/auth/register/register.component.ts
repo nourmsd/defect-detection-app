@@ -41,7 +41,7 @@ export class RegisterComponent {
       },
       error: (err) => {
         this.loading = false;
-        const errMsg = err.error?.message || 'Registration failed. Please try again.';
+        const errMsg = err.error?.message || 'Registration failed. Please try again or enter valid coordinates.';
         this.snackBar.open(errMsg, 'Close', { duration: 6000, panelClass: ['error-snackbar'] });
       }
     });

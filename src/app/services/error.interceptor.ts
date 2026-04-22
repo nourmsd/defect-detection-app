@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpRequest, HttpHandler, HttpEvent, HttpInterceptor, HttpErrorResponse } from '@angular/common/http';
-import { Observable, throwError } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { Observable, throwError, TimeoutError } from 'rxjs';
+import { catchError, timeout } from 'rxjs/operators';
 import { MatSnackBar } from '@angular/material/snack-bar';
 
 @Injectable()
@@ -9,13 +9,20 @@ export class ErrorInterceptor implements HttpInterceptor {
   constructor(private snackBar: MatSnackBar) { }
 
   // Auth endpoints handle their own errors in the component — skip interceptor display
-  private readonly silentUrls = ['/api/auth/login', '/api/auth/register', '/api/auth/reset-password'];
+  private readonly silentUrls = ['/api/login', '/api/register', '/api/reset-password', '/api/robot/action', '/api/robot/health'];
 
   intercept(request: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> {
     return next.handle(request).pipe(
-      catchError((error: HttpErrorResponse) => {
-        const errorMsg = this.resolveMessage(error);
+      timeout(30000),
+      catchError((error: HttpErrorResponse | TimeoutError | any) => {
         const isSilent = this.silentUrls.some(url => request.url.includes(url));
+
+        let errorMsg: string;
+        if (error instanceof TimeoutError) {
+          errorMsg = 'Request timed out. The server is taking too long to respond.';
+        } else {
+          errorMsg = this.resolveMessage(error);
+        }
 
         // Only show snackbar for non-auth routes — auth pages show their own messages
         if (!isSilent) {
@@ -34,17 +41,22 @@ export class ErrorInterceptor implements HttpInterceptor {
     // No connection
     if (error.status === 0) return 'Cannot connect to server. Please check your connection.';
 
-    // Use backend message if present
+    // Use backend message if present (JSON body with "message" field)
     const backendMsg = error.error?.message;
-    if (backendMsg) return backendMsg;
+    if (backendMsg && typeof backendMsg === 'string') return backendMsg;
 
-    // Fallback by status code
+    // If the backend sent a plain string body (e.g. Flask 500 traceback)
+    if (typeof error.error === 'string' && error.error.length < 200) return error.error;
+
+    // Fallback by status code — generic messages (not auth-specific)
     switch (error.status) {
       case 400: return 'Invalid request. Please check your input.';
-      case 401: return 'Invalid email or password.';
+      case 401: return 'Session expired. Please log in again.';
       case 403: return 'Access denied.';
-      case 404: return 'Email not registered.';
+      case 404: return 'Resource not found.';
       case 500: return 'Server error. Please try again later.';
+      case 503: return 'Service unavailable. Robot may be disconnected.';
+      case 504: return 'Request timed out.';
       default: return `Unexpected error (${error.status}).`;
     }
   }

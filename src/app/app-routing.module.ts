@@ -31,7 +31,7 @@ const routes: Routes = [
     path: 'admin/history', 
     component: HistoryComponent, 
     canActivate: [AuthGuard], 
-    data: { roles: ['admin'] } 
+    data: { roles: ['admin', 'worker'] } 
   },
   { 
     path: 'admin/analytics', 

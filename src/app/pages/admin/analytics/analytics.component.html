@@ -1,28 +1,162 @@
-<div class="dashboard-wrapper">
-  <mat-toolbar color="primary" class="glass-toolbar">
-    <span>Quality Analytics</span>
-    <span class="spacer"></span>
-    <nav class="admin-nav">
-      <a mat-button routerLink="/admin-dashboard">Overview</a>
-      <a mat-button routerLink="/admin/history">History</a>
-      <a mat-button routerLink="/admin/analytics" routerLinkActive="active">Analytics</a>
-    </nav>
-    <button mat-icon-button (click)="logout()">
-      <mat-icon>logout</mat-icon>
-    </button>
-  </mat-toolbar>
+<div class="analytics-shell" [class.light-mode]="themeService.isLight">
 
-  <div class="content-container">
-    <div class="glass-panel full-width">
-      <h3>Defect Rate & Throughput Trends</h3>
-      <div class="chart-container">
-        <!-- In a real app, use <canvas baseChart ...></canvas> -->
-        <div class="chart-placeholder">
-          <mat-icon class="large-icon">bar_chart</mat-icon>
-          <p>Real-time analytics chart visualization</p>
-          <span class="sub-text">(Integrated with ng2-charts)</span>
-        </div>
+  <!-- ═══ TOP BAR ═══ -->
+  <header class="an-topbar">
+    <div class="an-topbar-left">
+      <a class="an-back" routerLink="/admin-dashboard">
+        <mat-icon>arrow_back</mat-icon>
+      </a>
+      <div class="an-title-block">
+        <h1>Analytics</h1>
+        <span class="an-subtitle">Quality control performance metrics</span>
       </div>
     </div>
+    <div class="an-topbar-right">
+      <button class="an-icon-btn" (click)="themeService.toggleTheme()" [matTooltip]="themeService.isLight ? 'Dark Mode' : 'Light Mode'">
+        <mat-icon>{{ themeService.isLight ? 'dark_mode' : 'light_mode' }}</mat-icon>
+      </button>
+      <button class="an-icon-btn" (click)="logout()" matTooltip="Logout">
+        <mat-icon>logout</mat-icon>
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══ TIME RANGE SELECTOR ═══ -->
+  <div class="an-range-bar">
+    <span class="an-range-label">Time Range:</span>
+    <div class="an-range-btns">
+      <button *ngFor="let r of ranges"
+              class="range-btn"
+              [class.range-active]="selectedRange === r.value"
+              (click)="selectRange(r.value)">
+        {{ r.label }}
+      </button>
+    </div>
   </div>
+
+  <!-- ═══ LOADING ═══ -->
+  <div class="an-loading" *ngIf="loading">
+    <mat-icon>autorenew</mat-icon>
+    <span>Loading analytics...</span>
+  </div>
+
+  <!-- ═══ NO DATA ═══ -->
+  <div class="an-empty" *ngIf="!loading && !hasData">
+    <mat-icon>analytics</mat-icon>
+    <h3>No inspection data available</h3>
+    <p>Analytics will populate once the AI inspection system begins recording results.</p>
+  </div>
+
+  <!-- ═══ CONTENT ═══ -->
+  <div class="an-content" *ngIf="!loading && hasData">
+
+    <!-- KPI CARDS -->
+    <div class="an-kpi-row">
+      <div class="an-kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-icon-wrap kpi-icon-cyan"><mat-icon>inventory_2</mat-icon></span>
+          <span class="kpi-trend" *ngIf="kpis.trends.totalChange !== null"
+                [class.trend-up]="kpis.trends.totalChange! > 0"
+                [class.trend-down]="kpis.trends.totalChange! < 0">
+            <mat-icon>{{ kpis.trends.totalChange! >= 0 ? 'trending_up' : 'trending_down' }}</mat-icon>
+            {{ kpis.trends.totalChange! >= 0 ? '+' : '' }}{{ kpis.trends.totalChange }}%
+          </span>
+        </div>
+        <div class="kpi-big-val">{{ kpis.totalInspections | number }}</div>
+        <div class="kpi-label-text">Total Inspections</div>
+      </div>
+
+      <div class="an-kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-icon-wrap kpi-icon-green"><mat-icon>check_circle</mat-icon></span>
+          <span class="kpi-trend" *ngIf="kpis.trends.passRateChange !== null"
+                [class.trend-up]="kpis.trends.passRateChange! > 0"
+                [class.trend-down]="kpis.trends.passRateChange! < 0">
+            <mat-icon>{{ kpis.trends.passRateChange! >= 0 ? 'trending_up' : 'trending_down' }}</mat-icon>
+            {{ kpis.trends.passRateChange! >= 0 ? '+' : '' }}{{ kpis.trends.passRateChange }}%
+          </span>
+        </div>
+        <div class="kpi-big-val">{{ kpis.passRate }}%</div>
+        <div class="kpi-label-text">Pass Rate</div>
+      </div>
+
+      <div class="an-kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-icon-wrap kpi-icon-amber"><mat-icon>psychology</mat-icon></span>
+          <span class="kpi-trend" *ngIf="kpis.trends.confidenceChange !== null"
+                [class.trend-up]="kpis.trends.confidenceChange! > 0"
+                [class.trend-down]="kpis.trends.confidenceChange! < 0">
+            <mat-icon>{{ kpis.trends.confidenceChange! >= 0 ? 'trending_up' : 'trending_down' }}</mat-icon>
+            {{ kpis.trends.confidenceChange! >= 0 ? '+' : '' }}{{ kpis.trends.confidenceChange }}%
+          </span>
+        </div>
+        <div class="kpi-big-val">{{ kpis.avgConfidence }}%</div>
+        <div class="kpi-label-text">Avg Confidence</div>
+      </div>
+
+      <div class="an-kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-icon-wrap kpi-icon-red"><mat-icon>report_problem</mat-icon></span>
+        </div>
+        <div class="kpi-big-val">{{ kpis.defective | number }}</div>
+        <div class="kpi-label-text">Total Defective</div>
+      </div>
+    </div>
+
+    <!-- CHARTS ROW 1 -->
+    <div class="an-charts-row">
+
+      <!-- Line chart: Inspections over time -->
+      <div class="an-chart-card an-chart-wide">
+        <div class="chart-title">
+          <mat-icon>show_chart</mat-icon>
+          <span>Inspections Over Time</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas baseChart [data]="lineChartData" [options]="lineChartOptions" [type]="'line'"></canvas>
+        </div>
+      </div>
+
+      <!-- Donut chart: Pass vs Fail -->
+      <div class="an-chart-card an-chart-narrow">
+        <div class="chart-title">
+          <mat-icon>pie_chart</mat-icon>
+          <span>Pass / Fail Distribution</span>
+        </div>
+        <div class="chart-canvas-wrap chart-donut-wrap">
+          <canvas baseChart [data]="donutChartData" [options]="donutChartOptions" [type]="'doughnut'"></canvas>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- CHARTS ROW 2 -->
+    <div class="an-charts-row">
+
+      <!-- Histogram: Confidence distribution -->
+      <div class="an-chart-card an-chart-half">
+        <div class="chart-title">
+          <mat-icon>bar_chart</mat-icon>
+          <span>Confidence Score Distribution</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas baseChart [data]="histChartData" [options]="histChartOptions" [type]="'bar'"></canvas>
+        </div>
+      </div>
+
+      <!-- Horizontal bar: Defect type breakdown -->
+      <div class="an-chart-card an-chart-half">
+        <div class="chart-title">
+          <mat-icon>view_list</mat-icon>
+          <span>Defect Source Breakdown</span>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas baseChart [data]="barChartData" [options]="barChartOptions" [type]="'bar'"></canvas>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
 </div>

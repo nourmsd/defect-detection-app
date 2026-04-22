@@ -1,11 +1,11 @@
-<div class="qc-root" [class.qc-dark]="!themeService.isLight">
+<div class="qc-root" [class.light-mode]="themeService.isLight">
 
   <!-- ═══ TOP BAR ═══ -->
   <header class="qc-topbar">
     <div class="qc-brand">
       <div class="qc-logo"><mat-icon>precision_manufacturing</mat-icon></div>
       <div class="qc-brand-text">
-        <span class="qc-brand-name">AI Vision QC</span>
+        <span class="qc-brand-name">Agro-Tech Demonstrator</span>
         <span class="qc-brand-sub">INTELLIGENT QUALITY CONTROL</span>
       </div>
     </div>
@@ -24,6 +24,33 @@
     </div>
   </header>
 
+  <!-- ═══ ROBOT ALERT BANNERS (dismissible) ═══ -->
+  <div class="qc-banner-zone" *ngIf="visibleBannerAlerts.length > 0">
+    <div *ngFor="let banner of visibleBannerAlerts"
+         class="qc-banner-alert"
+         [class.banner-critical]="banner.severity === 'critical'"
+         [class.banner-warning]="banner.severity === 'warning'">
+      <div class="qc-banner-content">
+        <span class="qc-banner-icon">{{ banner.icon }}</span>
+        <span class="qc-banner-text">{{ banner.label }}</span>
+      </div>
+      <button class="qc-banner-dismiss" (click)="dismissBannerAlert(banner.id)" title="Dismiss alert">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══ ROBOT ALERTS BAR (real-time from socket) ═══ -->
+  <div class="qc-alert-bar" *ngIf="activeAlerts.length > 0">
+    <div *ngFor="let alert of activeAlerts"
+         class="qc-alert-item"
+         [class.alert-warning]="alert.severity === 'warning'"
+         [class.alert-critical]="alert.severity === 'critical'">
+      <mat-icon>{{ alert.severity === 'critical' ? 'error' : 'warning' }}</mat-icon>
+      <span>{{ alert.message }}</span>
+    </div>
+  </div>
+
   <!-- ═══ BODY ═══ -->
   <div class="qc-body">
 
@@ -38,7 +65,7 @@
         <div class="qc-camera-box">
           <span class="c-tl"></span><span class="c-tr"></span>
           <span class="c-bl"></span><span class="c-br"></span>
-          <span class="qc-fps-badge">FPS: {{ fps }}</span>
+          <span class="qc-fps-badge">FPS: {{ fps > 0 ? fps : '—' }}</span>
 
           <!-- Live MJPEG stream from Niryo robot -->
           <img class="qc-stream-img"
@@ -69,7 +96,7 @@
           </div>
         </div>
         <div class="qc-cam-footer">
-          <span>FPS: {{ fps }}</span>
+          <span>FPS: {{ fps > 0 ? fps : '—' }}</span>
           <span class="qc-mqtt-badge">MQTT: {{ systemLinks.mqtt ? 'Connected' : 'Disconnected' }}</span>
         </div>
       </div>
@@ -240,7 +267,7 @@
             <span class="qc-tooltip-icon" matTooltip="Time in seconds for the Raspberry Pi to capture, run AI inference, and return a decision.">?</span>
           </div>
           <div class="qc-proctime-body">
-            <div class="qc-proctime-val">{{ lastProcessingTime }}</div>
+            <div class="qc-proctime-val">{{ lastProcessingTime > 0 ? lastProcessingTime : '—' }}</div>
             <div class="qc-proctime-sub">SECONDS</div>
           </div>
         </div>
@@ -252,24 +279,28 @@
           </div>
           <div class="qc-links-list">
             <div class="qc-link-row">
-              <span class="qc-link-dot" [class.link-red]="!systemLinks.plc" [class.link-green]="systemLinks.plc"></span>
-              <span>PLC: {{ systemLinks.plc ? 'Connected' : 'Not connected' }}</span>
+              <span class="qc-link-dot" [class.link-green]="isRobotConnected" [class.link-red]="!isRobotConnected"></span>
+              <span>Robot: {{ isRobotConnected ? 'Connected' : 'Disconnected' }}</span>
             </div>
             <div class="qc-link-row">
-              <span class="qc-link-dot" [class.link-green]="systemLinks.mqtt" [class.link-red]="!systemLinks.mqtt"></span>
-              <span>MQTT: {{ systemLinks.mqtt ? 'Connected' : 'Disconnected' }}</span>
-            </div>
-            <div class="qc-link-row">
-              <span class="qc-link-dot" [class.link-green]="systemLinks.aiModel" [class.link-red]="!systemLinks.aiModel"></span>
-              <span>AI Model: {{ systemLinks.aiModel ? 'Loaded' : 'Not loaded' }}</span>
+              <span class="qc-link-dot" [class.link-green]="robotHealth?.hardware_status?.connection_up || isRobotConnected" [class.link-red]="!(robotHealth?.hardware_status?.connection_up || isRobotConnected)"></span>
+              <span>Hardware: {{ (robotHealth?.hardware_status?.connection_up || isRobotConnected) ? 'OK' : 'Down' }}</span>
             </div>
             <div class="qc-link-row">
               <span class="qc-link-dot" [class.link-green]="systemLinks.camera" [class.link-red]="!systemLinks.camera"></span>
               <span>Camera: {{ systemLinks.camera ? 'Active' : 'Inactive' }}</span>
             </div>
             <div class="qc-link-row">
+              <span class="qc-link-dot" [class.link-green]="!robotHealth?.hardware_status?.calibration_needed" [class.link-red]="robotHealth?.hardware_status?.calibration_needed"></span>
+              <span>Calibration: {{ robotHealth?.hardware_status?.calibration_needed ? 'Needed' : 'OK' }}</span>
+            </div>
+            <div class="qc-link-row">
               <span class="qc-link-dot" [class.link-green]="systemLinks.mongodb" [class.link-red]="!systemLinks.mongodb"></span>
               <span>MongoDB: {{ systemLinks.mongodb ? 'Connected' : 'Disconnected' }}</span>
+            </div>
+            <div class="qc-link-row" *ngIf="robotHealth?.hardware_status?.rpi_temperature">
+              <span class="qc-link-dot" [class.link-green]="robotHealth!.hardware_status.rpi_temperature < 75" [class.link-red]="robotHealth!.hardware_status.rpi_temperature >= 75"></span>
+              <span>RPi Temp: {{ robotHealth!.hardware_status.rpi_temperature }}°C</span>
             </div>
           </div>
         </div>
@@ -284,12 +315,64 @@
 
       </div><!-- /bottom-row -->
 
+      <!-- ROBOT CONTROLS (worker only — replaces Niryo Studio) -->
+      <div class="qc-card qc-robot-controls-card">
+        <div class="qc-field-label">ROBOT CONTROLS
+          <span class="qc-tooltip-icon" matTooltip="Direct robot controls — replaces Niryo Studio. Buttons are disabled when the robot is disconnected.">?</span>
+          <span class="qc-robot-status-badge"
+                [class.badge-connected]="isRobotConnected"
+                [class.badge-disconnected]="!isRobotConnected">
+            {{ isRobotConnected ? 'CONNECTED' : 'DISCONNECTED' }}
+          </span>
+        </div>
+        <div class="qc-robot-controls">
+          <button class="qc-robot-btn qc-btn-danger" (click)="triggerRobotAction('stop_command')" [disabled]="actionLoading">
+            <mat-icon>stop_circle</mat-icon> Emergency Stop
+          </button>
+          <button class="qc-robot-btn" (click)="triggerRobotAction('calibrate_auto')" [disabled]="actionLoading">
+            <mat-icon>straighten</mat-icon> Auto Calibrate
+          </button>
+          <button class="qc-robot-btn" (click)="triggerRobotAction('request_new_calibration')" [disabled]="actionLoading">
+            <mat-icon>build</mat-icon> New Calibration
+          </button>
+          <button class="qc-robot-btn qc-btn-warn" (click)="triggerRobotAction('reboot_motors')" [disabled]="actionLoading">
+            <mat-icon>refresh</mat-icon> Reboot Motors
+          </button>
+          <button class="qc-robot-btn" (click)="triggerRobotAction('reboot_tool')" [disabled]="actionLoading">
+            <mat-icon>handyman</mat-icon> Reboot Tool
+          </button>
+        </div>
+        <div class="qc-action-status" *ngIf="actionMessage"
+             [class.action-success]="actionSuccess"
+             [class.action-error]="!actionSuccess">
+          <mat-icon>{{ actionSuccess ? 'check_circle' : 'error' }}</mat-icon>
+          {{ actionMessage }}
+        </div>
+      </div>
+
+      <!-- MOTOR TEMPERATURES (worker sees real-time temps) -->
+      <div class="qc-card qc-temps-card" *ngIf="robotHealth?.hardware_status?.temperatures?.length">
+        <div class="qc-field-label">MOTOR TEMPERATURES
+          <span class="qc-tooltip-icon" matTooltip="Real-time motor temperatures from the Niryo Ned2. Warning at 55°C, critical at 65°C.">?</span>
+        </div>
+        <div class="qc-temps-grid">
+          <div *ngFor="let temp of robotHealth!.hardware_status.temperatures; let i = index"
+               class="qc-temp-item"
+               [class.temp-ok]="temp < 55"
+               [class.temp-warn]="temp >= 55 && temp < 65"
+               [class.temp-critical]="temp >= 65">
+            <div class="qc-temp-name">{{ robotHealth!.hardware_status.motor_names[i] || 'Motor ' + i }}</div>
+            <div class="qc-temp-val">{{ temp }}°C</div>
+          </div>
+        </div>
+      </div>
+
       <!-- INSPECTION HISTORY FULL ROW -->
       <div class="qc-card qc-history-card">
         <div class="qc-field-label">INSPECTION HISTORY
           <span class="qc-tooltip-icon" matTooltip="Opens the full paginated history log with filters by date, product type, and result.">?</span>
         </div>
-        <button class="qc-history-btn" routerLink="/admin-dashboard">
+        <button class="qc-history-btn" routerLink="/admin/history">
           <mat-icon>history</mat-icon>
           View Full History
         </button>

@@ -1,8 +1,8 @@
-import { Component, OnInit, OnDestroy, NgZone, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, NgZone } from '@angular/core';
 import { SocketService } from '../../../services/socket.service';
 import { AuthService } from '../../../services/auth.service';
 import { ThemeService } from '../../../services/theme.service';
-import { ApiService, Inspection } from '../../../services/api.service';
+import { ApiService, Inspection, RobotHealth, RobotAlert } from '../../../services/api.service';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { Subscription } from 'rxjs';
 
@@ -21,10 +21,13 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   defectCount = 0;
   totalInspections = 0;
 
+  // ── Dismissible robot alert banners ────────────────────────────
+  dismissedAlertIds = new Set<string>();
+
   // ── Live telemetry ─────────────────────────────────────────────
   currentTime = '';
-  fps = 30.0;
-  lastProcessingTime = 0.45;
+  fps = 0;
+  lastProcessingTime = 0;
   confidenceScore = 0;   // comes from AI model via backend
   detectionStatus: 'WAITING' | 'NORMAL' | 'DEFECTIVE' = 'WAITING';
   rejectionRate = 0;
@@ -33,23 +36,36 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   // ── Camera stream ──────────────────────────────────────────────
   cameraStreamUrl = '';                  // NOT readonly — must be mutable
   streamActive = false;
-  private streamHost = '10.10.10.10';
+  private streamHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
   private streamRetryTimer: any = null;
   private readonly STREAM_BASE_PORT = 5001;
   private readonly STREAM_RETRY_MS = 4000
 
-  // ── System link states ─────────────────────────────────────────
+  // ── Robot health ────────────────────────────────────────────────
+  robotHealth: RobotHealth | null = null;
+  activeAlerts: RobotAlert[] = [];
+
+  // ── System link states (updated from real robot health data) ──
   systemLinks = {
     plc: false,
-    mqtt: true,
-    aiModel: true,
-    camera: true,
-    mongodb: true
+    mqtt: false,
+    aiModel: false,
+    camera: false,
+    mongodb: false
   };
+
+  // ── Robot action state ──────────────────────────────────────────
+  actionLoading = false;
+  actionMessage = '';
+  actionSuccess = true;
+
+  /** True if the robot is connected — driven by health data from Python backend */
+  get isRobotConnected(): boolean {
+    return !!this.robotHealth?.robot_connected;
+  }
 
   // ── Private ────────────────────────────────────────────────────
   private clockTimer: any;
-  private simTimer: any;
   private subscriptions = new Subscription();
 
   constructor(
@@ -58,23 +74,106 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     private apiService: ApiService,
     public themeService: ThemeService,
     private snackBar: MatSnackBar,
-    private ngZone: NgZone,
-    private cdr: ChangeDetectorRef
-
+    private ngZone: NgZone
   ) {
 
     this.refreshStreamUrl();
   }
 
+  // ── Computed: visible (non-dismissed) alert banners ────────────
+  get visibleBannerAlerts(): { id: string; icon: string; label: string; severity: string }[] {
+    const banners: { id: string; icon: string; label: string; severity: string }[] = [];
+
+    if (this.robotHealth) {
+      // Calibration needed
+      if (this.robotHealth.hardware_status?.calibration_needed) {
+        banners.push({ id: 'calibration_needed', icon: '🔴', label: 'Calibration Needed — Robot requires recalibration before resuming operations', severity: 'critical' });
+      }
+
+      // Emergency stop (robot status indicates stopped)
+      const status = this.robotHealth.robot_status?.robot_status_str?.toLowerCase() || '';
+      if (status.includes('stop') || status.includes('emergency')) {
+        banners.push({ id: 'emergency_stop', icon: '🔴', label: 'Emergency Stop Triggered — Robot has been halted. Manual reset required', severity: 'critical' });
+      }
+
+      // Motor errors requiring reboot
+      const hwErrors = this.robotHealth.hardware_status?.hardware_errors_message || [];
+      if (hwErrors.length > 0 && hwErrors.some((e: string) => e && e.length > 0)) {
+        banners.push({ id: 'reboot_motors', icon: '🔴', label: 'Reboot Motors Required — Motor hardware error detected: ' + hwErrors.filter((e: string) => e && e.length > 0).join(', '), severity: 'critical' });
+      }
+    }
+
+    // Also include real-time alerts from the robot that are critical/warning
+    for (const alert of this.activeAlerts) {
+      const msg = alert.message?.toLowerCase() || '';
+      if (msg.includes('calibrat')) {
+        banners.push({ id: 'rt_calib_' + alert.id, icon: '🔴', label: 'Calibration Needed — ' + alert.message, severity: 'critical' });
+      } else if (msg.includes('emergency') || msg.includes('stop')) {
+        banners.push({ id: 'rt_estop_' + alert.id, icon: '🔴', label: 'Emergency Stop Triggered — ' + alert.message, severity: 'critical' });
+      } else if (msg.includes('motor') || msg.includes('reboot')) {
+        banners.push({ id: 'rt_motor_' + alert.id, icon: '🔴', label: 'Reboot Motors Required — ' + alert.message, severity: 'critical' });
+      }
+    }
+
+    // Deduplicate by id and filter out dismissed
+    const seen = new Set<string>();
+    return banners.filter(b => {
+      if (seen.has(b.id) || this.dismissedAlertIds.has(b.id)) return false;
+      seen.add(b.id);
+      return true;
+    });
+  }
+
+  dismissBannerAlert(id: string) {
+    this.dismissedAlertIds.add(id);
+  }
+
   ngOnInit() {
     this.startClock();
-    this.startSimulation();
     this.fetchInspections();
 
     const socketSub = this.socketService.alerts$.subscribe(alert => {
       this.handleNewAlert(alert);
     });
     this.subscriptions.add(socketSub);
+
+    // ── Robot health: real-time updates from Socket.IO ────────
+    const healthSub = this.socketService.robotHealth$.subscribe(health => {
+      this.ngZone.run(() => {
+        this.robotHealth = health;
+        this.activeAlerts = health.alerts || [];
+        this.systemLinks.camera = this.streamActive;
+        // Update FPS from robot health if available
+        if (health.camera_fps !== undefined && health.camera_fps !== null) {
+          this.fps = health.camera_fps;
+        }
+      });
+    });
+    this.subscriptions.add(healthSub);
+
+    // ── Robot alerts: show snackbar for new critical/warning alerts ──
+    const robotAlertSub = this.socketService.robotAlert$.subscribe(alert => {
+      this.ngZone.run(() => {
+        const panelClass = alert.severity === 'critical'
+          ? ['alert-snackbar', 'alert-defective']
+          : ['alert-snackbar', 'alert-warning'];
+        this.snackBar.open(alert.message, 'Dismiss', {
+          duration: alert.severity === 'critical' ? 10000 : 5000,
+          panelClass
+        });
+      });
+    });
+    this.subscriptions.add(robotAlertSub);
+
+    // Fetch initial health snapshot
+    this.apiService.getRobotHealth().subscribe({
+      next: (health) => {
+        this.robotHealth = health;
+        this.activeAlerts = health.alerts || [];
+        this.systemLinks.camera = this.streamActive;
+      },
+      error: () => {} // niryo_stream not ready yet
+    });
   }
 
   // ── Clock — updates every second ──────────────────────────────
@@ -84,30 +183,31 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     this.clockTimer = setInterval(() => {
       this.ngZone.run(() => {
         this.currentTime = new Date().toLocaleTimeString('en-GB', { hour12: false });
-        this.cdr.detectChanges();
       });
     }, 1000);
   }
 
-  // ── Simulation — subtle live feel (FPS / proc time fluctuations) ──
-  private startSimulation() {
-    this.simTimer = setInterval(() => {
-      this.ngZone.run(() => {
-        this.fps = parseFloat((29.5 + Math.random()).toFixed(1));
-        if (this.detectionStatus === 'WAITING') {
-          this.lastProcessingTime = parseFloat((0.4 + Math.random() * 0.2).toFixed(3));
-        }
-      });
-    }, 3000);
-  }
 
   // ── Fetch existing inspections from backend ────────────────────
   fetchInspections() {
     this.apiService.getInspections().subscribe({
-      next: (data) => {
-        this.inspections = data.slice(0, 20);
-        this.calculateMetrics(data);
-        if (data.length > 0) this.updateLatestDetection(data[0]);
+      next: (res) => {
+        const history = res.history || [];
+        this.inspections = history.slice(0, 20);
+
+        // Use server-side gauge totals (all-time counts, not just recent 50)
+        if (res.gauges) {
+          this.totalInspections = res.gauges.totalInspected;
+          this.defectCount = res.gauges.defective;
+          this.normalCount = res.gauges.conforming;
+          this.rejectionRate = this.totalInspections > 0
+            ? Math.round((this.defectCount / this.totalInspections) * 100)
+            : 0;
+        } else {
+          this.calculateMetrics(history);
+        }
+
+        if (history.length > 0) this.updateLatestDetection(history[0]);
       },
       error: (err) => console.error('Failed to fetch inspections', err)
     });
@@ -173,6 +273,7 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   // ── Stream event handlers ──────────────────────────────────────
   onStreamLoad(): void {
     this.streamActive = true;
+    this.systemLinks.camera = true;
     if (this.streamRetryTimer) {
       clearTimeout(this.streamRetryTimer);
       this.streamRetryTimer = null;
@@ -181,12 +282,34 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
 
   onStreamError(): void {
     this.streamActive = false;
+    this.systemLinks.camera = false;
+    clearTimeout(this.streamRetryTimer);
     this.streamRetryTimer = setTimeout(() => {
       this.ngZone.run(() => {
         this.refreshStreamUrl();
-        this.cdr.detectChanges();
       });
     }, this.STREAM_RETRY_MS);
+  }
+
+  // ── Robot actions ───────────────────────────────────────────────
+  triggerRobotAction(action: string) {
+    this.actionLoading = true;
+    this.actionSuccess = true;
+    this.actionMessage = `Executing ${action.replace(/_/g, ' ')}...`;
+    this.apiService.triggerRobotAction(action).subscribe({
+      next: (res) => {
+        this.actionSuccess = res.success;
+        this.actionMessage = res.message;
+        this.actionLoading = false;
+        setTimeout(() => this.actionMessage = '', 8000);
+      },
+      error: (err) => {
+        this.actionSuccess = false;
+        this.actionMessage = err.error?.message || 'Robot not reachable';
+        this.actionLoading = false;
+        setTimeout(() => this.actionMessage = '', 8000);
+      }
+    });
   }
 
   // ── Reset all counters ─────────────────────────────────────────
@@ -203,8 +326,7 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     clearInterval(this.clockTimer);
-    clearInterval(this.simTimer);
-    if (this.streamRetryTimer) clearTimeout(this.streamRetryTimer);  // ← add
+    if (this.streamRetryTimer) clearTimeout(this.streamRetryTimer);
     this.subscriptions.unsubscribe();
   }
 

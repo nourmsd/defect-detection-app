@@ -20,10 +20,6 @@ import { MatSelectModule } from '@angular/material/select';
 
 import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
-import { DashboardComponent } from './pages/dashboard/dashboard.component';
-import { StatCardComponent } from './components/stat-card/stat-card.component';
-import { DeviceCardComponent } from './components/device-card/device-card.component';
-import { InspectionListComponent } from './components/inspection-list/inspection-list.component';
 
 // Auth & Dashboard Pages
 import { LoginComponent } from './pages/auth/login/login.component';
@@ -38,10 +34,6 @@ import { ErrorInterceptor } from './services/error.interceptor';
 @NgModule({
   declarations: [
     AppComponent,
-    DashboardComponent,
-    StatCardComponent,
-    DeviceCardComponent,
-    InspectionListComponent,
     LoginComponent,
     RegisterComponent,
     ResetPasswordComponent,
@@ -68,7 +60,6 @@ import { ErrorInterceptor } from './services/error.interceptor';
     MatToolbarModule,
     MatTooltipModule,
     BaseChartDirective,
-    MatTooltipModule,
     MatSelectModule
   ],
   providers: [
