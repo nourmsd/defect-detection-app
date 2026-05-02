@@ -19,25 +19,25 @@ const routes: Routes = [
     path: 'worker-dashboard', 
     component: WorkerDashboardComponent, 
     canActivate: [AuthGuard], 
-    data: { roles: ['worker', 'admin'] } 
+    data: { roles: ['worker', 'admin'] }
   },
-  { 
-    path: 'admin-dashboard', 
-    component: AdminDashboardComponent, 
-    canActivate: [AuthGuard], 
-    data: { roles: ['admin'] } 
+  {
+    path: 'admin-dashboard',
+    component: AdminDashboardComponent,
+    canActivate: [AuthGuard],
+    data: { roles: ['admin'] }
   },
-  { 
-    path: 'admin/history', 
-    component: HistoryComponent, 
-    canActivate: [AuthGuard], 
-    data: { roles: ['admin', 'worker'] } 
+  {
+    path: 'admin/history',
+    component: HistoryComponent,
+    canActivate: [AuthGuard],
+    data: { roles: ['admin', 'worker'] }
   },
-  { 
-    path: 'admin/analytics', 
-    component: AnalyticsComponent, 
-    canActivate: [AuthGuard], 
-    data: { roles: ['admin'] } 
+  {
+    path: 'admin/analytics',
+    component: AnalyticsComponent,
+    canActivate: [AuthGuard],
+    data: { roles: ['admin'] }
   },
   { path: '', redirectTo: '/login', pathMatch: 'full' },
   { path: '**', redirectTo: '/login' }

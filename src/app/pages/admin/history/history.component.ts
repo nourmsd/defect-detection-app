@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { ApiService } from '../../../services/api.service';
 import { AuthService } from '../../../services/auth.service';
 import { ThemeService } from '../../../services/theme.service';
@@ -13,7 +13,10 @@ export class HistoryComponent implements OnInit {
 
   // Data
   inspections: any[] = [];
-  loading = false;
+  // Start in loading state so the spinner shows immediately on route entry,
+  // preventing a flash of the "no data" empty state before ngOnInit fires.
+  loading = true;
+  errorMessage: string | null = null;
 
   // Pagination
   currentPage = 1;
@@ -35,7 +38,8 @@ export class HistoryComponent implements OnInit {
   constructor(
     private apiService: ApiService,
     private authService: AuthService,
-    public themeService: ThemeService
+    public themeService: ThemeService,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit() {
@@ -44,6 +48,8 @@ export class HistoryComponent implements OnInit {
 
   fetchHistory() {
     this.loading = true;
+    this.errorMessage = null;
+
     const params: any = {
       page: this.currentPage,
       limit: this.pageSize
@@ -63,10 +69,23 @@ export class HistoryComponent implements OnInit {
         this.totalRecords = res.pagination?.total || 0;
         this.totalPages = res.pagination?.totalPages || 0;
         this.loading = false;
+        this.cdr.markForCheck();
       },
-      error: () => {
+      error: (err) => {
         this.inspections = [];
+        this.totalRecords = 0;
+        this.totalPages = 0;
         this.loading = false;
+        if (err?.name === 'TimeoutError') {
+          this.errorMessage = 'Server timeout — retry';
+        } else if (err?.status === 0) {
+          this.errorMessage = 'Unable to load data — backend unreachable';
+        } else if (err?.status === 403) {
+          this.errorMessage = 'Access denied';
+        } else {
+          this.errorMessage = 'Unable to load inspection history';
+        }
+        this.cdr.markForCheck();
       }
     });
   }

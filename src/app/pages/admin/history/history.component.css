@@ -274,6 +274,17 @@
   margin: 0;
 }
 
+.hist-retry-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 10px; padding: 8px 20px;
+  background: var(--accent-dim); border: 1px solid var(--accent);
+  border-radius: var(--radius); color: var(--accent);
+  font-family: var(--font-data); font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: background .2s;
+}
+.hist-retry-btn:hover { background: rgba(0, 212, 255, 0.2); }
+.hist-retry-btn mat-icon { font-size: 16px; width: 16px; height: 16px; }
+
 /* ── Table ────────────────────────────────────────────────────── */
 .hist-table {
   width: 100%;
@@ -623,6 +634,12 @@
 
 .df-highlight { color: var(--accent); }
 .df-red { color: var(--red); }
+.df-missing { color: var(--text-muted); font-style: italic; }
+
+/* ── Detected date column ────────────────────────────────────── */
+.col-date { white-space: nowrap; }
+.col-date .date-read    { color: var(--green); font-weight: 600; }
+.col-date .date-missing { color: var(--text-muted); font-style: italic; }
 
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 768px) {

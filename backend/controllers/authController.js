@@ -5,40 +5,49 @@ const bcrypt = require('bcrypt');
 const {
   sendPendingEmail,
   sendApprovedEmail,
-  sendEmail, // optional (for rejection)
+  sendEmail,
 } = require("../services/emailService");
 
+const { recordLogin, recordLogout } = require('./attendanceController');
+
+let _io = null;
+function setSocketServer(io) { _io = io; }
 
 // ================= REGISTER =================
 exports.register = async (req, res) => {
   try {
-    const { username, email, password, role } = req.body;
+    const { firstName, lastName, email, password, role } = req.body;
 
-    // Check if user already exists
+    if (!firstName || !lastName) {
+      return res.status(400).json({ message: 'First name and last name are required' });
+    }
+
     let user = await User.findOne({ email });
     if (user) {
       return res.status(400).json({ message: 'User already exists with this email' });
     }
 
+    // Map 'supervisor' role label to 'admin' for DB storage
+    const dbRole = (role === 'supervisor') ? 'admin' : (role || 'worker');
+
     user = new User({
-      username,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
       email,
       password,
-      role: role || 'worker',
+      role: dbRole,
       status: 'pending'
     });
 
-
     await user.save();
 
-    // 📧 SEND PENDING EMAIL (SAFE)
     try {
       await sendPendingEmail(user.email);
     } catch (e) {
       console.error("❌ Failed to send pending email:", e.message);
     }
 
-    console.log(`[Auth] Registered new user: ${email} (Status: pending)`);
+    console.log(`[Auth] Registered: ${email} (${dbRole}, Status: pending)`);
 
     res.status(201).json({
       message: 'Registration successful! Your account is pending admin approval.'
@@ -63,7 +72,6 @@ exports.login = async (req, res) => {
       return res.status(404).json({ message: 'Email not found' });
     }
 
-    // Allow fixed admin bypass
     const IS_FIXED_ADMIN = email === 'nourmessaoudi54@gmail.com';
 
     if (!IS_FIXED_ADMIN && user.status !== 'approved') {
@@ -71,38 +79,35 @@ exports.login = async (req, res) => {
         user.status === 'pending'
           ? 'Your account is pending admin approval'
           : 'Your account has been rejected';
-
       return res.status(403).json({ message: msg });
     }
 
     const isMatch = await user.comparePassword(password);
-
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
-    const payload = {
-      id: user._id,
-      role: user.role,
-      email: user.email
-    };
+    const fullName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim();
 
-    const token = jwt.sign(
-      payload,
-      process.env.JWT_SECRET,
-      { expiresIn: '1d' }
-    );
+    const payload = { id: user._id, role: user.role, email: user.email };
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1d' });
 
-    // Set user online
     user.isOnline = true;
     await user.save();
+
+    recordLogin(user._id, fullName, user.email, user.role, _io).catch(e =>
+      console.error('[Attendance] Failed to record login:', e.message)
+    );
 
     console.log(`[Auth] Login successful: ${email} (${user.role})`);
 
     res.json({
       token,
       id: user._id,
-      username: user.username,
+      firstName: user.firstName || '',
+      lastName: user.lastName || '',
+      fullName,
+      username: fullName,
       email: user.email,
       role: user.role,
       status: user.status
@@ -121,10 +126,7 @@ exports.getPendingWorkers = async (req, res) => {
     const pending = await User.find({ status: 'pending' }).select('-password');
     res.json(pending);
   } catch (err) {
-    res.status(500).json({
-      message: 'Error fetching pending requests',
-      error: err.message
-    });
+    res.status(500).json({ message: 'Error fetching pending requests', error: err.message });
   }
 };
 
@@ -138,42 +140,32 @@ exports.validateWorker = async (req, res) => {
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     user.status = status;
-
     if (phone) user.phone = phone;
-    if (role) user.role = role;
+    if (role) user.role = role === 'supervisor' ? 'admin' : role;
 
     await user.save();
 
-    // 📧 SEND EMAIL BASED ON STATUS
     try {
       if (status === "approved") {
         await sendApprovedEmail(user.email);
-      }
-
-      if (status === "rejected") {
+      } else if (status === "rejected") {
         await sendEmail(
           user.email,
           "Account Rejected",
           "Your account has been rejected by the administrator."
         );
       }
-
     } catch (e) {
       console.error("❌ Failed to send status email:", e.message);
     }
 
-    console.log(`[Admin] Moderated user ${user.email} -> Status: ${status}, Role: ${role || user.role}`);
+    const fullName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim();
+    console.log(`[Admin] Moderated ${fullName} (${user.email}) -> ${status}`);
 
-    res.json({
-      message: `User ${status} successfully!`,
-      user
-    });
+    res.json({ message: `User ${status} successfully!`, user });
 
   } catch (err) {
-    res.status(500).json({
-      message: 'Error validating user',
-      error: err.message
-    });
+    res.status(500).json({ message: 'Error validating user', error: err.message });
   }
 };
 
@@ -197,7 +189,6 @@ exports.resetPassword = async (req, res) => {
         user.status === 'pending'
           ? 'Your account is not yet validated by the administrator'
           : 'Your account has been rejected';
-
       return res.status(403).json({ message: msg });
     }
 
@@ -205,17 +196,11 @@ exports.resetPassword = async (req, res) => {
     await user.save();
 
     console.log(`[Auth] Password reset successful for: ${email}`);
-
-    res.json({
-      message: 'Password reset successfully! You can now log in.'
-    });
+    res.json({ message: 'Password reset successfully! You can now log in.' });
 
   } catch (err) {
     console.error(`[Auth] Reset password error: ${err.message}`);
-    res.status(500).json({
-      message: 'Internal Server Error',
-      error: err.message
-    });
+    res.status(500).json({ message: 'Internal Server Error', error: err.message });
   }
 };
 
@@ -223,21 +208,13 @@ exports.resetPassword = async (req, res) => {
 // ================= GET ACTIVE WORKERS =================
 exports.getActiveWorkers = async (req, res) => {
   try {
-    const workers = await User.find({
-      role: 'worker',
-      status: 'approved'
-    })
+    const workers = await User.find({ role: 'worker', status: 'approved' })
       .select('-password')
       .sort({ isOnline: -1, username: 1 });
-
     res.json(workers);
-
   } catch (err) {
     console.error(`[Admin] Error fetching workers: ${err.message}`);
-    res.status(500).json({
-      message: 'Error fetching workers',
-      error: err.message
-    });
+    res.status(500).json({ message: 'Error fetching workers', error: err.message });
   }
 };
 
@@ -258,8 +235,34 @@ exports.deleteUser = async (req, res) => {
       email: { $ne: 'nourmessaoudi54@gmail.com' }
     });
     if (!user) return res.status(404).json({ message: 'User not found or protected' });
-    res.json({ message: `User ${user.email} deleted. Email is free to re-register.` });
+    res.json({ message: `User ${user.email} deleted.` });
   } catch (err) {
     res.status(500).json({ message: 'Error deleting user', error: err.message });
   }
 };
+
+
+// ================= LOGOUT =================
+exports.logout = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+    const user = await User.findById(userId);
+    if (user) {
+      user.isOnline = false;
+      await user.save();
+    }
+
+    await recordLogout(userId, _io).catch(e =>
+      console.error('[Attendance] Failed to record logout:', e.message)
+    );
+
+    console.log(`[Auth] Logout: userId=${userId}`);
+    res.json({ message: 'Logged out successfully' });
+  } catch (err) {
+    res.status(500).json({ message: 'Logout error', error: err.message });
+  }
+};
+
+exports.setSocketServer = setSocketServer;

@@ -19,18 +19,41 @@
 
     <form [formGroup]="registerForm" (ngSubmit)="onSubmit()">
 
-      <!-- Username -->
-      <div class="login-field">
-        <label class="login-label">Username</label>
-        <div class="login-input-wrap"
-             [class.input-error]="registerForm.get('username')?.invalid && registerForm.get('username')?.touched">
-          <mat-icon class="input-icon">person_outline</mat-icon>
-          <input class="login-input" type="text" formControlName="username" autocomplete="username">
+      <!-- First Name + Last Name -->
+      <div class="name-row">
+        <div class="login-field">
+          <label class="login-label">First Name</label>
+          <div class="login-input-wrap"
+               [class.input-error]="registerForm.get('firstName')?.invalid && registerForm.get('firstName')?.touched">
+            <mat-icon class="input-icon">person_outline</mat-icon>
+            <input class="login-input" type="text" formControlName="firstName" placeholder="First name" autocomplete="given-name">
+          </div>
+          <span class="login-error"
+                *ngIf="registerForm.get('firstName')?.hasError('required') && registerForm.get('firstName')?.touched">
+            First name is required
+          </span>
+          <span class="login-error"
+                *ngIf="registerForm.get('firstName')?.hasError('minlength') && registerForm.get('firstName')?.touched">
+            Minimum 2 characters
+          </span>
         </div>
-        <span class="login-error"
-              *ngIf="registerForm.get('username')?.hasError('required') && registerForm.get('username')?.touched">
-          Username is required
-        </span>
+
+        <div class="login-field">
+          <label class="login-label">Last Name</label>
+          <div class="login-input-wrap"
+               [class.input-error]="registerForm.get('lastName')?.invalid && registerForm.get('lastName')?.touched">
+            <mat-icon class="input-icon">badge</mat-icon>
+            <input class="login-input" type="text" formControlName="lastName" placeholder="Last name" autocomplete="family-name">
+          </div>
+          <span class="login-error"
+                *ngIf="registerForm.get('lastName')?.hasError('required') && registerForm.get('lastName')?.touched">
+            Last name is required
+          </span>
+          <span class="login-error"
+                *ngIf="registerForm.get('lastName')?.hasError('minlength') && registerForm.get('lastName')?.touched">
+            Minimum 2 characters
+          </span>
+        </div>
       </div>
 
       <!-- Email -->
@@ -78,9 +101,10 @@
         <label class="login-label">Role</label>
         <div class="login-input-wrap"
              [class.input-error]="registerForm.get('role')?.invalid && registerForm.get('role')?.touched">
-          <mat-icon class="input-icon">badge</mat-icon>
+          <mat-icon class="input-icon">work_outline</mat-icon>
           <select class="login-input login-select" formControlName="role">
             <option value="worker">Worker</option>
+            <option value="supervisor">Supervisor</option>
             <option value="admin">Admin</option>
           </select>
         </div>

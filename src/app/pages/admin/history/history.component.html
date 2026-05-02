@@ -64,7 +64,16 @@
       <span>Loading inspections...</span>
     </div>
 
-    <div class="hist-empty" *ngIf="!loading && inspections.length === 0">
+    <div class="hist-empty" *ngIf="!loading && errorMessage">
+      <mat-icon>cloud_off</mat-icon>
+      <h3>{{ errorMessage }}</h3>
+      <p>Check the backend connection and try again.</p>
+      <button class="hist-retry-btn" (click)="fetchHistory()">
+        <mat-icon>refresh</mat-icon> Retry
+      </button>
+    </div>
+
+    <div class="hist-empty" *ngIf="!loading && !errorMessage && inspections.length === 0">
       <mat-icon>inbox</mat-icon>
       <h3>No inspections recorded yet</h3>
       <p>Inspection results will appear here once the AI system begins processing.</p>
@@ -76,6 +85,7 @@
           <th>#ID</th>
           <th>Date &amp; Time</th>
           <th>Device</th>
+          <th>Expiry Date</th>
           <th>Result</th>
           <th>Confidence</th>
           <th>Actions</th>
@@ -87,7 +97,13 @@
             class="hist-row">
           <td class="col-id">{{ getShortId(item.id) }}</td>
           <td class="col-time">{{ item.timestamp | date:'dd MMM yyyy, HH:mm:ss' }}</td>
-          <td class="col-device">{{ item.device || 'Camera 1' }}</td>
+          <td class="col-device">{{ item.device || 'Niryo Camera' }}</td>
+          <td class="col-date">
+            <span [class.date-read]="item.detected_date && item.detected_date !== 'missing'"
+                  [class.date-missing]="!item.detected_date || item.detected_date === 'missing'">
+              {{ (item.detected_date && item.detected_date !== 'missing') ? item.detected_date : '—' }}
+            </span>
+          </td>
           <td>
             <span class="result-tag" [class.tag-pass]="item.label === 'OK'" [class.tag-fail]="item.label !== 'OK'">
               {{ item.label === 'OK' ? 'PASS' : 'FAIL' }}
@@ -159,6 +175,14 @@
           <span class="df-value">{{ selectedInspection.device || 'Camera 1' }}</span>
         </div>
         <div class="drawer-field">
+          <span class="df-label">Expiry Date Read</span>
+          <span class="df-value"
+            [class.df-highlight]="selectedInspection.detected_date && selectedInspection.detected_date !== 'missing'"
+            [class.df-missing]="!selectedInspection.detected_date || selectedInspection.detected_date === 'missing'">
+            {{ (selectedInspection.detected_date && selectedInspection.detected_date !== 'missing') ? selectedInspection.detected_date : 'missing' }}
+          </span>
+        </div>
+        <div class="drawer-field">
           <span class="df-label">AI Confidence</span>
           <span class="df-value df-highlight">{{ normaliseConfidence(selectedInspection.confidence) }}%</span>
         </div>
@@ -169,18 +193,6 @@
         <div class="drawer-field">
           <span class="df-label">Result Label</span>
           <span class="df-value">{{ selectedInspection.label }}</span>
-        </div>
-        <div class="drawer-field" *ngIf="selectedInspection.label !== 'OK'">
-          <span class="df-label">Defect Type</span>
-          <span class="df-value df-red">Visual Defect Detected</span>
-        </div>
-        <div class="drawer-field" *ngIf="selectedInspection.label !== 'OK'">
-          <span class="df-label">Robot Action</span>
-          <span class="df-value">Placed in reject bin</span>
-        </div>
-        <div class="drawer-field" *ngIf="selectedInspection.label === 'OK'">
-          <span class="df-label">Robot Action</span>
-          <span class="df-value">Placed in conforming zone</span>
         </div>
       </div>
     </div>
