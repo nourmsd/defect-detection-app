@@ -6,6 +6,7 @@ const roleMiddleware = require('../middleware/role');
 
 router.post('/register', authController.register);
 router.post('/login', authController.login);
+router.post('/logout', authMiddleware, authController.logout);
 router.post('/reset-password', authController.resetPassword);
 
 // Admin validation routes

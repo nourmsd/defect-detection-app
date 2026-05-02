@@ -9,7 +9,16 @@ export class ErrorInterceptor implements HttpInterceptor {
   constructor(private snackBar: MatSnackBar) { }
 
   // Auth endpoints handle their own errors in the component — skip interceptor display
-  private readonly silentUrls = ['/api/login', '/api/register', '/api/reset-password', '/api/robot/action', '/api/robot/health'];
+  private readonly silentUrls = [
+    '/api/login',
+    '/api/register',
+    '/api/reset-password',
+    '/api/robot/action',
+    '/api/robot/health',
+    '/api/worker/dashboard-data',
+    '/api/stream/health',
+    '/api/robot/status'
+  ];
 
   intercept(request: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> {
     return next.handle(request).pipe(
@@ -24,12 +33,13 @@ export class ErrorInterceptor implements HttpInterceptor {
           errorMsg = this.resolveMessage(error);
         }
 
-        // Only show snackbar for non-auth routes — auth pages show their own messages
         if (!isSilent) {
           this.snackBar.open(errorMsg, 'Close', {
             duration: 5000,
             panelClass: ['error-snackbar']
           });
+        } else {
+          console.warn('[http]', request.method, request.url, errorMsg);
         }
 
         return throwError(() => ({ ...error, resolvedMessage: errorMsg }));

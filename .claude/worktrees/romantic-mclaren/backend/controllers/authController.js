@@ -64,7 +64,7 @@ exports.login = async (req, res) => {
     }
 
     // Allow fixed admin bypass
-    const IS_FIXED_ADMIN = email === 'nourmessaoudi54@gmail.com';
+    const IS_FIXED_ADMIN = email === 'bghassen239@gmail.com';
 
     if (!IS_FIXED_ADMIN && user.status !== 'approved') {
       const msg =
@@ -255,7 +255,7 @@ exports.deleteUser = async (req, res) => {
     const { userId } = req.params;
     const user = await User.findOneAndDelete({
       _id: userId,
-      email: { $ne: 'nourmessaoudi54@gmail.com' }
+      email: { $ne: 'bghassen239@gmail.com' }
     });
     if (!user) return res.status(404).json({ message: 'User not found or protected' });
     res.json({ message: `User ${user.email} deleted. Email is free to re-register.` });

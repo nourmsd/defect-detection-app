@@ -1,0 +1,21 @@
+{
+  "settings_version": "0.0.6",
+  "datasets_dir": "C:\\Users\\nourm\\OneDrive\\Desktop\\P\\Stage_PFE\\datasets",
+  "weights_dir": "C:\\Users\\nourm\\OneDrive\\Desktop\\P\\Stage_PFE\\smart-quality-control-frontend\\weights",
+  "runs_dir": "C:\\Users\\nourm\\OneDrive\\Desktop\\P\\Stage_PFE\\smart-quality-control-frontend\\runs",
+  "uuid": "fafc4cebf4d7f8787e6f505f0839c2960960d009ca6eeda21a95f956d20e1a4d",
+  "sync": true,
+  "api_key": "",
+  "openai_api_key": "",
+  "clearml": true,
+  "comet": true,
+  "dvc": true,
+  "hub": true,
+  "mlflow": true,
+  "neptune": true,
+  "raytune": true,
+  "tensorboard": false,
+  "wandb": false,
+  "vscode_msg": true,
+  "openvino_msg": true
+}

@@ -3,10 +3,11 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "outDir": "./out-tsc/app",
+   "outDir": "./out-tsc/app",
+    "rootDir": "./src",
     "types": []
   },
-  "include": [
+"include": [
     "src/**/*.ts"
   ],
   "exclude": [

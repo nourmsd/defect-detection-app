@@ -33,6 +33,19 @@
         <mat-icon>manage_accounts</mat-icon>
         <span *ngIf="!sidebarCollapsed">Users &amp; Accounts</span>
       </a>
+      <a class="nav-item" [class.active]="activeTab==='attendance'" (click)="activeTab='attendance'; fetchConnectedWorkers(); fetchAttendanceHistory()">
+        <mat-icon>badge</mat-icon>
+        <span *ngIf="!sidebarCollapsed">Attendance</span>
+        <span class="nav-badge nav-badge-green" *ngIf="connectedCount > 0">{{connectedCount}}</span>
+      </a>
+      <a class="nav-item" [class.active]="activeTab==='timeline'" (click)="activeTab='timeline'; fetchTimeline()">
+        <mat-icon>linear_scale</mat-icon>
+        <span *ngIf="!sidebarCollapsed">System Timeline</span>
+      </a>
+      <a class="nav-item" [class.active]="activeTab==='settings'" (click)="activeTab='settings'">
+        <mat-icon>tune</mat-icon>
+        <span *ngIf="!sidebarCollapsed">Settings</span>
+      </a>
     </nav>
 
     <div class="sidebar-footer">
@@ -45,6 +58,15 @@
 
   <!-- ═══ MAIN AREA ═══ -->
   <div class="main-area">
+
+    <!-- DANGER ALERT BANNER -->
+    <div class="danger-banner" *ngIf="dangerAlertActive">
+      <mat-icon class="danger-icon">error</mat-icon>
+      <span class="danger-text">DANGER ALERT: {{ dangerAlertMessage }}</span>
+      <button class="danger-dismiss" (click)="dismissDangerBanner()">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
 
     <!-- TOP NAVBAR -->
     <header class="top-navbar">
@@ -63,10 +85,9 @@
           <mat-icon>{{ themeService.isLight ? 'dark_mode' : 'light_mode' }}</mat-icon>
         </button>
         <div class="admin-profile">
-          <div class="avatar">AD</div>
+          <div class="avatar">SP</div>
           <div class="profile-info">
-            <span class="profile-name">Admin</span>
-            <span class="profile-role">Factory Director</span>
+            <span class="profile-name">Supervisor</span>
           </div>
         </div>
       </div>
@@ -85,7 +106,7 @@
             <div class="kpi-body">
               <span class="kpi-label">Total Inspected</span>
               <span class="kpi-value">{{ stats.totalInspected !== null ? (stats.totalInspected | number) : '—' }}</span>
-              <span class="kpi-sub">All time from MongoDB</span>
+              <span class="kpi-sub">Today's production (since midnight)</span>
             </div>
           </div>
           <div class="kpi-card kpi-amber" (click)="activeTab='requests'" style="cursor:pointer;">
@@ -101,7 +122,7 @@
             <div class="kpi-body">
               <span class="kpi-label">Defective Items</span>
               <span class="kpi-value">{{ stats.defective !== null ? (stats.defective | number) : '—' }}</span>
-              <span class="kpi-sub">From inspection records</span>
+              <span class="kpi-sub">Today's defects (since midnight)</span>
             </div>
           </div>
           <div class="kpi-card kpi-green">
@@ -109,156 +130,151 @@
             <div class="kpi-body">
               <span class="kpi-label">Factory Efficiency</span>
               <span class="kpi-value">{{ stats.efficiency !== null ? stats.efficiency + '%' : '—' }}</span>
-              <span class="kpi-sub">Pass rate</span>
+              <span class="kpi-sub">
+                {{ stats.totalInspected !== null ? stats.totalInspected : '—' }} / {{ stats.dailyTarget || settings.daily_target }} target
+              </span>
+            </div>
+          </div>
+          <div class="kpi-card kpi-blue" (click)="activeTab='attendance'; fetchConnectedWorkers(); fetchAttendanceHistory()" style="cursor:pointer;">
+            <div class="kpi-icon"><mat-icon>group</mat-icon></div>
+            <div class="kpi-body">
+              <span class="kpi-label">Workers Online</span>
+              <span class="kpi-value">{{ connectedCount }}</span>
+              <span class="kpi-sub">Currently connected</span>
             </div>
           </div>
         </div>
 
-        <!-- ROBOT STATUS + AI VISION WIDGETS -->
+        <!-- AI VISION + SYSTEM STATUS WIDGETS -->
         <div class="widget-row">
 
-          <!-- ROBOT STATUS WIDGET -->
-          <div class="panel widget-panel" [class.widget-pulse-red]="isRobotError">
+          <!-- AI VISION STATUS WIDGET -->
+          <div class="panel widget-panel">
             <div class="panel-header">
-              <mat-icon>precision_manufacturing</mat-icon>
-              <h2>Robot Status</h2>
-              <span class="status-badge" [ngClass]="robotStatusColor">{{ robotStatusLabel }}</span>
+              <mat-icon>psychology</mat-icon>
+              <h2>AI Vision Pipeline</h2>
+              <span class="status-badge" [ngClass]="lastInspection ? 'status-green' : 'status-amber'">
+                {{ aiPipelineStatus }}
+              </span>
             </div>
             <div class="widget-body">
-              <div class="widget-grid">
+              <div class="widget-grid" *ngIf="lastInspection">
                 <div class="widget-field">
-                  <span class="widget-field-label">Connection</span>
-                  <span class="widget-field-value" [class.val-green]="robotHealth?.robot_connected"
-                    [class.val-red]="!robotHealth?.robot_connected">
-                    {{ robotHealth?.robot_connected ? 'Connected' : 'Disconnected' }}
+                  <span class="widget-field-label">Last Result</span>
+                  <span class="widget-field-value"
+                    [class.val-green]="lastInspection.label === 'OK'"
+                    [class.val-red]="lastInspection.label !== 'OK'">
+                    {{ lastInspection.label === 'OK' ? 'CONFORMING' : 'DEFECTIVE' }}
                   </span>
                 </div>
                 <div class="widget-field">
-                  <span class="widget-field-label">Last Heartbeat</span>
-                  <span class="widget-field-value">{{ lastHeartbeat }}</span>
+                  <span class="widget-field-label">Expiry Date Read</span>
+                  <span class="widget-field-value"
+                    [class.val-green]="lastInspection.detected_date && lastInspection.detected_date !== 'missing'"
+                    [class.val-amber]="!lastInspection.detected_date || lastInspection.detected_date === 'missing'">
+                    {{ (lastInspection.detected_date && lastInspection.detected_date !== 'missing') ? lastInspection.detected_date : 'missing' }}
+                  </span>
                 </div>
                 <div class="widget-field">
-                  <span class="widget-field-label">Motor Status</span>
-                  <span class="widget-field-value">{{ motorStatusSummary }}</span>
+                  <span class="widget-field-label">Confidence</span>
+                  <span class="widget-field-value">{{ normaliseConfidence(lastInspection.confidence) }}%</span>
                 </div>
                 <div class="widget-field">
-                  <span class="widget-field-label">Operation Mode</span>
-                  <span class="widget-field-value">{{ operationMode }}</span>
+                  <span class="widget-field-label">Processing Time</span>
+                  <span class="widget-field-value">
+                    {{ lastInspection.processing_time ? (lastInspection.processing_time | number:'1.2-2') + 's' : '—' }}
+                  </span>
+                </div>
+                <div class="widget-field">
+                  <span class="widget-field-label">Detected At</span>
+                  <span class="widget-field-value">
+                    {{ lastInspection.timestamp | date:'HH:mm:ss' }}
+                  </span>
                 </div>
               </div>
-
-              <!-- Mini event log -->
-              <div class="event-log">
-                <div class="event-log-header">Recent Events</div>
-                <div class="event-log-entries" *ngIf="robotEventLog.length > 0">
-                  <div *ngFor="let evt of robotEventLog" class="event-entry"
-                    [class.evt-critical]="evt.severity === 'critical'" [class.evt-warning]="evt.severity === 'warning'">
-                    <span class="evt-time">{{ evt.time }}</span>
-                    <span class="evt-msg">{{ evt.message }}</span>
-                  </div>
-                </div>
-                <div class="event-log-empty" *ngIf="robotEventLog.length === 0">
-                  No recent events
-                </div>
+              <div class="event-log-empty" *ngIf="!lastInspection">
+                No detections yet — waiting for AI pipeline
               </div>
             </div>
           </div>
 
-          <!-- System STATUS WIDGET -->
+          <!-- SYSTEM STATUS WIDGET -->
           <div class="panel widget-panel">
             <div class="panel-header">
               <mat-icon>settings_input_component</mat-icon>
               <h2>System Status</h2>
-              <span class="status-badge" [ngClass]="robotHealth?.robot_connected ? 'status-green' : 'status-amber'">
-                {{ robotHealth?.robot_connected ? 'ALL SYSTEMS' : 'PARTIAL' }}
+              <span class="status-badge"
+                [ngClass]="statsError ? 'status-red' : (stats.totalInspected !== null ? 'status-green' : 'status-amber')">
+                {{ statsError ? 'DEGRADED' : (stats.totalInspected !== null ? 'ACTIVE' : 'CHECKING') }}
               </span>
             </div>
             <div class="widget-body">
               <div class="equip-list">
 
-                <!-- Niryo Ned2 Robot -->
+                <!-- Robot -->
                 <div class="equip-row">
-                  <span class="equip-dot" [ngClass]="robotHealth?.robot_connected ? 'dot-green' : 'dot-gray'"></span>
+                  <span class="equip-dot" [ngClass]="systemHealth.robot === 'online' ? 'dot-green' : 'dot-red'"></span>
                   <div class="equip-info">
-                    <span class="equip-name">Niryo Ned2</span>
-                    <span class="equip-sub">Robotic arm / AI carrier</span>
+                    <span class="equip-name">Robot (Niryo Ned2)</span>
+                    <span class="equip-sub">Robotic arm — joint control + inspection</span>
                   </div>
-                  <span class="equip-status" [class.val-green]="robotHealth?.robot_connected"
-                    [class.val-red]="!robotHealth?.robot_connected">
-                    {{ robotHealth?.robot_connected ? 'Online' : 'Offline' }}
+                  <span class="equip-status"
+                    [class.val-green]="systemHealth.robot === 'online'"
+                    [class.val-red]="systemHealth.robot !== 'online'">
+                    {{ systemHealth.robot === 'online' ? 'Connected' : 'Offline' }}
                   </span>
                 </div>
 
-                <!-- AI Vision Camera -->
+                <!-- AI Vision -->
                 <div class="equip-row">
-                  <span class="equip-dot" [ngClass]="robotHealth?.robot_connected ? 'dot-green' : 'dot-gray'"></span>
+                  <span class="equip-dot" [ngClass]="systemHealth.ai === 'online' ? 'dot-green' : 'dot-amber'"></span>
                   <div class="equip-info">
-                    <span class="equip-name">AI Vision Camera</span>
-                    <span class="equip-sub">Onboard Ned2 camera — MJPEG stream</span>
+                    <span class="equip-name">AI Vision Pipeline</span>
+                    <span class="equip-sub">YOLO inference — expiry &amp; defect detection</span>
                   </div>
-                  <span class="equip-status" [class.val-green]="robotHealth?.robot_connected"
-                    [class.val-red]="!robotHealth?.robot_connected">
-                    {{ robotHealth?.robot_connected ? 'Streaming' : 'Offline' }}
+                  <span class="equip-status"
+                    [class.val-green]="systemHealth.ai === 'online'"
+                    [class.val-amber]="systemHealth.ai !== 'online'">
+                    {{ systemHealth.ai === 'online' ? 'Running' : 'Waiting' }}
                   </span>
                 </div>
 
-                <!-- Siemens S7-1200 PLC -->
+                <!-- PLC -->
                 <div class="equip-row">
-                  <span class="equip-dot"
-                    [ngClass]="robotHealth?.hardware_status?.connection_up ? 'dot-green' : 'dot-gray'"></span>
+                  <span class="equip-dot" [ngClass]="systemHealth.plc === 'online' ? 'dot-green' : 'dot-red'"></span>
                   <div class="equip-info">
-                    <span class="equip-name">Siemens S7-1200 PLC</span>
-                    <span class="equip-sub">Conveyor belt controller</span>
+                    <span class="equip-name">PLC (Siemens S7-1200)</span>
+                    <span class="equip-sub">Conveyor &amp; actuator control</span>
                   </div>
-                  <span class="equip-status" [class.val-green]="robotHealth?.hardware_status?.connection_up"
-                    [class.val-amber]="!robotHealth?.hardware_status?.connection_up">
-                    {{ robotHealth?.hardware_status?.connection_up ? 'Linked' : 'Not Monitored' }}
+                  <span class="equip-status"
+                    [class.val-green]="systemHealth.plc === 'online'"
+                    [class.val-red]="systemHealth.plc !== 'online'">
+                    {{ systemHealth.plc === 'online' ? 'Connected' : 'Offline' }}
                   </span>
                 </div>
 
-
-
-                <!-- MQTT Broker -->
+                <!-- Database -->
                 <div class="equip-row">
-                  <span class="equip-dot dot-green"></span>
+                  <span class="equip-dot" [ngClass]="systemHealth.database === 'online' ? 'dot-green' : 'dot-red'"></span>
                   <div class="equip-info">
-                    <span class="equip-name">MQTT Broker</span>
-                    <span class="equip-sub">IoT message bus</span>
+                    <span class="equip-name">Database (MongoDB)</span>
+                    <span class="equip-sub">Inspection data store — Express + Socket.IO</span>
                   </div>
-                  <span class="equip-status val-green">Active</span>
-                </div>
-
-                <!-- MongoDB Atlas -->
-                <div class="equip-row">
-                  <span class="equip-dot dot-green"></span>
-                  <div class="equip-info">
-                    <span class="equip-name">MongoDB Atlas</span>
-                    <span class="equip-sub">Inspection data store</span>
-                  </div>
-                  <span class="equip-status val-green">Connected</span>
-                </div>
-
-              </div>
-
-              <!-- Motor temperatures strip -->
-              <div class="temp-strip" *ngIf="robotHealth?.hardware_status?.temperatures?.length">
-                <span class="temp-strip-label">Motor Temps</span>
-                <div class="temp-chips">
-                  <span *ngFor="let t of robotHealth!.hardware_status.temperatures; let i = index" class="temp-chip"
-                    [class.temp-warn]="t >= 55 && t < 65" [class.temp-crit]="t >= 65">
-                    M{{i+1}}&nbsp;{{t | number:'1.0-0'}}°C
+                  <span class="equip-status"
+                    [class.val-green]="systemHealth.database === 'online'"
+                    [class.val-red]="systemHealth.database !== 'online'">
+                    {{ systemHealth.database === 'online' ? 'Online' : 'Error' }}
                   </span>
                 </div>
+
               </div>
             </div>
           </div>
 
         </div>
 
-        <!-- SYSTEM STATUS + PENDING -->
+        <!-- PENDING REGISTRATIONS -->
         <div class="overview-grid">
-
-
           <div class="panel pending-snapshot-panel">
             <div class="panel-header">
               <mat-icon>group_add</mat-icon>
@@ -270,9 +286,9 @@
 
             <div class="worker-list" *ngIf="pendingWorkers.length > 0">
               <div class="worker-row" *ngFor="let w of pendingWorkers">
-                <div class="worker-avatar">{{ w.username?.charAt(0)?.toUpperCase() }}</div>
+                <div class="worker-avatar">{{ avatarInitials(w) }}</div>
                 <div class="worker-details">
-                  <strong>{{ w.username }}</strong>
+                  <strong>{{ displayName(w) }}</strong>
                   <span>{{ w.email }}</span>
                 </div>
                 <div class="worker-btns">
@@ -334,8 +350,8 @@
               <tr *ngFor="let w of pendingWorkers">
                 <td>
                   <div class="cell-user">
-                    <div class="table-avatar">{{ w.username?.charAt(0)?.toUpperCase() }}</div>
-                    {{ w.username }}
+                    <div class="table-avatar">{{ avatarInitials(w) }}</div>
+                    {{ displayName(w) }}
                   </div>
                 </td>
                 <td>{{ w.email }}</td>
@@ -379,12 +395,12 @@
           <div class="empty-state large" *ngIf="!defectiveLoading && defectiveItems.length === 0">
             <mat-icon>precision_manufacturing</mat-icon>
             <h3>No defective items recorded</h3>
-            <p>Connect your robot to the backend and defective products will appear here automatically.</p>
+            <p>Defective products detected by the AI pipeline will appear here automatically.</p>
           </div>
           <table class="data-table" *ngIf="!defectiveLoading && defectiveItems.length > 0">
             <thead>
               <tr>
-                <th>Product Barcode (Mocked)</th>
+                <th>Product ID</th>
                 <th>Inspection Device</th>
                 <th>Defect Confidence</th>
                 <th>Result</th>
@@ -395,7 +411,7 @@
               <tr *ngFor="let item of defectiveItems">
                 <td>
                   <div class="cell-user">
-                    <strong>{{ getShortId(item._id) }}</strong>
+                    <strong>{{ ((item._id || '') | slice:-6) || 'N/A' }}</strong>
                   </div>
                 </td>
                 <td>{{ item.device }}</td>
@@ -422,16 +438,25 @@
 
         <div class="panel">
           <div class="empty-state large" *ngIf="allUsersLoading">
-            <mat-icon>autorenew</mat-icon>
+            <mat-icon class="spin-icon">autorenew</mat-icon>
             <p>Loading users...</p>
           </div>
 
-          <div class="empty-state large" *ngIf="!allUsersLoading && allUsers.length === 0">
+          <div class="empty-state large" *ngIf="!allUsersLoading && allUsersError">
+            <mat-icon>cloud_off</mat-icon>
+            <h3>{{ allUsersError }}</h3>
+            <p>Check the backend connection and try again.</p>
+            <button class="refresh-btn-lg" style="margin-top:10px" (click)="fetchAllUsers()">
+              <mat-icon>refresh</mat-icon> Retry
+            </button>
+          </div>
+
+          <div class="empty-state large" *ngIf="!allUsersLoading && !allUsersError && allUsers.length === 0">
             <mat-icon>manage_accounts</mat-icon>
             <h3>No users found</h3>
           </div>
 
-          <table class="data-table" *ngIf="!allUsersLoading && allUsers.length > 0">
+          <table class="data-table" *ngIf="!allUsersLoading && !allUsersError && allUsers.length > 0">
             <thead>
               <tr>
                 <th>User</th>
@@ -446,13 +471,12 @@
               <tr *ngFor="let u of allUsers">
                 <td>
                   <div class="cell-user">
-                    <div class="table-avatar">{{ u.username?.charAt(0)?.toUpperCase() }}</div>
-                    {{ u.username }}
+                    <div class="table-avatar">{{ avatarInitials(u) }}</div>
+                    {{ displayName(u) }}
                   </div>
                 </td>
                 <td>{{ u.email }}</td>
-                <td><span class="pill" [ngClass]="u.role === 'admin' ? 'pill-cyan' : 'pill-gray'">{{ u.role }}</span>
-                </td>
+                <td><span class="pill" [ngClass]="u.role === 'admin' ? 'pill-cyan' : 'pill-gray'">{{ u.role === 'admin' ? 'Supervisor' : u.role }}</span></td>
                 <td>
                   <span class="pill" [ngClass]="{
                     'pill-green': u.status === 'approved',
@@ -470,6 +494,371 @@
             </tbody>
           </table>
         </div>
+      </section>
+
+      <!-- ═══ ATTENDANCE TAB ═══ -->
+      <section *ngIf="activeTab === 'attendance'" class="tab-content">
+
+        <!-- Currently Connected -->
+        <div class="section-header">
+          <div>
+            <h2>Worker Supervision &amp; Attendance</h2>
+            <p>Real-time presence tracking and session history for all workers.</p>
+          </div>
+          <button class="refresh-btn-lg" (click)="fetchConnectedWorkers(); fetchAttendanceHistory()">
+            <mat-icon>refresh</mat-icon> Refresh
+          </button>
+        </div>
+
+        <!-- Connected Now -->
+        <div class="panel attend-connected-panel">
+          <div class="panel-header">
+            <mat-icon>wifi</mat-icon>
+            <h2>Currently Connected Workers</h2>
+            <span class="status-badge" [ngClass]="connectedCount > 0 ? 'status-green' : 'status-amber'">
+              {{ connectedCount }} ONLINE
+            </span>
+          </div>
+          <div class="worker-list" *ngIf="connectedWorkers.length > 0">
+            <div class="worker-row" *ngFor="let w of connectedWorkers">
+              <span class="online-dot"></span>
+              <div class="worker-avatar">{{ avatarInitials(w) }}</div>
+              <div class="worker-details">
+                <strong>{{ displayName(w) }}</strong>
+                <span>{{ w.email }} · <em>{{ w.role }}</em></span>
+              </div>
+              <div class="worker-session-info">
+                <span class="session-label">Since</span>
+                <span class="session-val">{{ w.loginTime | date:'HH:mm' }}</span>
+                <span class="session-label">Duration</span>
+                <span class="session-val">{{ formatDuration(w.sessionDurationMin) }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="empty-state" *ngIf="connectedWorkers.length === 0">
+            <mat-icon>person_off</mat-icon>
+            <span>No workers currently connected</span>
+          </div>
+        </div>
+
+        <!-- Filter row -->
+        <div class="attend-filter-row">
+          <label class="filter-label">Period:</label>
+          <button class="filter-btn" [class.active]="attendanceRange==='day'"
+            (click)="attendanceRange='day'; fetchAttendanceHistory()">Today</button>
+          <button class="filter-btn" [class.active]="attendanceRange==='week'"
+            (click)="attendanceRange='week'; fetchAttendanceHistory()">This Week</button>
+          <button class="filter-btn" [class.active]="attendanceRange==='month'"
+            (click)="attendanceRange='month'; fetchAttendanceHistory()">This Month</button>
+          <input *ngIf="attendanceRange==='day'" type="date" class="date-input"
+            [(ngModel)]="attendanceDate" (change)="fetchAttendanceHistory()">
+        </div>
+
+        <!-- Per-Worker Summary -->
+        <div class="panel" *ngIf="attendanceSummary.length > 0">
+          <div class="panel-header">
+            <mat-icon>summarize</mat-icon>
+            <h2>Work Summary —
+              {{ attendanceRange === 'week' ? 'This Week' :
+                 attendanceRange === 'month' ? 'This Month' :
+                 (attendanceDate | date:'dd MMM yyyy') }}</h2>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Worker</th>
+                <th>Role</th>
+                <th>Sessions</th>
+                <th>Total Hours</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let s of attendanceSummary">
+                <td>
+                  <div class="cell-user">
+                    <div class="table-avatar">{{ avatarInitials(s) }}</div>
+                    {{ displayName(s) }}
+                  </div>
+                </td>
+                <td><span class="pill pill-cyan">{{ s.role }}</span></td>
+                <td>{{ s.sessions.length }}</td>
+                <td><strong>{{ s.totalMinutes > 0 ? formatDuration(s.totalMinutes) : '—' }}</strong></td>
+                <td>
+                  <span *ngIf="s.absent" class="pill pill-red">Absent</span>
+                  <span *ngIf="!s.absent" class="pill" [ngClass]="s.sessions[0]?.isActive ? 'pill-green' : 'pill-gray'">
+                    {{ s.sessions[0]?.isActive ? 'Present' : 'Left' }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Session Log -->
+        <div class="panel">
+          <div class="panel-header">
+            <mat-icon>history</mat-icon>
+            <h2>Session Log</h2>
+          </div>
+          <div class="empty-state large" *ngIf="attendanceLoading">
+            <mat-icon class="spin-icon">autorenew</mat-icon>
+            <p>Loading attendance records...</p>
+          </div>
+          <div class="empty-state large" *ngIf="!attendanceLoading && attendanceLogs.length === 0">
+            <mat-icon>event_busy</mat-icon>
+            <h3>No sessions recorded for this period</h3>
+          </div>
+          <table class="data-table" *ngIf="!attendanceLoading && attendanceLogs.length > 0">
+            <thead>
+              <tr>
+                <th>Worker</th>
+                <th>Role</th>
+                <th>Date</th>
+                <th>Login</th>
+                <th>Logout</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let log of attendanceLogs">
+                <td>
+                  <div class="cell-user">
+                    <div class="table-avatar">{{ avatarInitials(log) }}</div>
+                    {{ displayName(log) }}
+                  </div>
+                </td>
+                <td><span class="pill pill-cyan">{{ log.role }}</span></td>
+                <td>{{ log.date }}</td>
+                <td>{{ log.loginTime | date:'HH:mm:ss' }}</td>
+                <td>
+                  <span *ngIf="log.logoutTime">{{ log.logoutTime | date:'HH:mm:ss' }}</span>
+                  <span *ngIf="!log.logoutTime" class="pill pill-green">Active</span>
+                </td>
+                <td>
+                  <strong>{{ log.logoutTime ? formatDuration(log.sessionDuration || 0) : 'Ongoing' }}</strong>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ═══ SYSTEM TIMELINE TAB ═══ -->
+      <section *ngIf="activeTab === 'timeline'" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2>System Operation Timeline</h2>
+            <p>Daily factory state from 07:00 to 19:00. Auto-resets each production day.</p>
+          </div>
+          <div class="header-actions">
+            <input type="date" class="date-input" [(ngModel)]="timelineDate" (change)="fetchTimeline()">
+            <button class="refresh-btn-lg" (click)="fetchTimeline()">
+              <mat-icon>refresh</mat-icon> Refresh
+            </button>
+          </div>
+        </div>
+
+        <!-- Automatic state info panel -->
+        <div class="panel timeline-control-panel">
+          <div class="panel-header">
+            <mat-icon>auto_mode</mat-icon>
+            <h2>Automatic State Timeline</h2>
+            <span class="status-badge status-green">AUTO</span>
+          </div>
+          <div class="tl-auto-info">
+            <p class="tl-auto-desc">
+              Timeline events are generated automatically from system component states.
+              The timeline runs from <strong>07:00</strong> to <strong>19:00</strong> each production day.
+            </p>
+            <div class="tl-state-rules">
+              <div class="tl-state-row">
+                <span class="tl-dot tl-dot-yellow"></span>
+                <div>
+                  <strong>Partial Start (Yellow)</strong>
+                  <span>Robot + PLC connected — waiting for AI &amp; Database</span>
+                </div>
+              </div>
+              <div class="tl-state-row">
+                <span class="tl-dot tl-dot-green"></span>
+                <div>
+                  <strong>Fully Operational (Green)</strong>
+                  <span>Robot + PLC + AI Vision + Database all active</span>
+                </div>
+              </div>
+              <div class="tl-state-row">
+                <span class="tl-dot tl-dot-red"></span>
+                <div>
+                  <strong>Stopped / Fault (Red)</strong>
+                  <span>Robot disconnected or critical component failure</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Live component state summary -->
+          <div class="tl-live-state">
+            <span class="tl-live-item">
+              <span class="equip-dot" [ngClass]="systemHealth.robot === 'online' ? 'dot-green' : 'dot-red'"></span>
+              Robot
+            </span>
+            <span class="tl-live-item">
+              <span class="equip-dot" [ngClass]="systemHealth.plc === 'online' ? 'dot-green' : 'dot-red'"></span>
+              PLC
+            </span>
+            <span class="tl-live-item">
+              <span class="equip-dot" [ngClass]="systemHealth.ai === 'online' ? 'dot-green' : 'dot-amber'"></span>
+              AI Vision
+            </span>
+            <span class="tl-live-item">
+              <span class="equip-dot" [ngClass]="systemHealth.database === 'online' ? 'dot-green' : 'dot-red'"></span>
+              Database
+            </span>
+          </div>
+        </div>
+
+        <!-- Timeline visualization -->
+        <div class="panel">
+          <div class="panel-header">
+            <mat-icon>linear_scale</mat-icon>
+            <h2>{{ timelineDate | date:'EEEE, d MMMM yyyy' }}</h2>
+          </div>
+          <div class="empty-state" *ngIf="timelineLoading">
+            <mat-icon class="spin-icon">autorenew</mat-icon>
+            <span>Loading timeline...</span>
+          </div>
+
+          <div class="tl-container" *ngIf="!timelineLoading">
+            <!-- Hour labels -->
+            <div class="tl-hour-labels">
+              <span *ngFor="let h of timelineHours()" class="tl-hour-label">
+                {{ h.toString().padStart(2,'0') }}:00
+              </span>
+            </div>
+
+            <!-- Track -->
+            <div class="tl-track">
+              <div class="tl-baseline"></div>
+              <!-- Events as markers -->
+              <div *ngFor="let ev of timelineEvents"
+                class="tl-marker"
+                [style.left]="timelineEventLeft(ev)"
+                [class.tl-marker-yellow]="ev.color === 'yellow'"
+                [class.tl-marker-green]="ev.color === 'green'"
+                [class.tl-marker-red]="ev.color === 'red'"
+                [matTooltip]="ev.label + ' — ' + (ev.timestamp | date:'HH:mm:ss')">
+                <div class="tl-marker-dot"></div>
+                <div class="tl-marker-line"></div>
+                <div class="tl-marker-label">{{ ev.label }}<br><small>{{ ev.timestamp | date:'HH:mm' }}</small></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Event list -->
+          <div class="tl-event-list" *ngIf="!timelineLoading && timelineEvents.length > 0">
+            <div *ngFor="let ev of timelineEvents" class="tl-event-row"
+              [class.tl-ev-yellow]="ev.color==='yellow'"
+              [class.tl-ev-green]="ev.color==='green'"
+              [class.tl-ev-red]="ev.color==='red'">
+              <span class="tl-ev-dot"></span>
+              <span class="tl-ev-time">{{ ev.timestamp | date:'HH:mm:ss' }}</span>
+              <span class="tl-ev-label">{{ ev.label }}</span>
+            </div>
+          </div>
+          <div class="empty-state" *ngIf="!timelineLoading && timelineEvents.length === 0">
+            <mat-icon>timeline</mat-icon>
+            <span>No events recorded for this day</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ SETTINGS TAB ═══ -->
+      <section *ngIf="activeTab === 'settings'" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2>System Settings</h2>
+            <p>Configure production targets, expiry thresholds, and alert controls.</p>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+
+          <!-- Daily Production Target -->
+          <div class="panel settings-card">
+            <div class="panel-header">
+              <mat-icon>track_changes</mat-icon>
+              <h2>Daily Production Target</h2>
+            </div>
+            <div class="settings-body">
+              <p class="settings-desc">
+                Sets the denominator for efficiency calculation:<br>
+                <code>Efficiency = (Inspected / Target) × 100</code>
+              </p>
+              <div class="settings-field">
+                <label>Daily Target (products)</label>
+                <input type="number" class="settings-input" [(ngModel)]="settings.daily_target"
+                  min="1" max="10000" placeholder="450">
+                <span class="settings-hint">Current: {{ stats.totalInspected || 0 }} / {{ settings.daily_target }} = {{ stats.efficiency || 0 }}%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Expiry Threshold -->
+          <div class="panel settings-card">
+            <div class="panel-header">
+              <mat-icon>event_busy</mat-icon>
+              <h2>Expiration Rejection Threshold</h2>
+            </div>
+            <div class="settings-body">
+              <p class="settings-desc">
+                Products with an expiry date <strong>before</strong> this threshold are treated as <strong>expired (defective)</strong>.
+                Leave blank to disable threshold validation.
+              </p>
+              <div class="settings-field">
+                <label>Threshold Date</label>
+                <input type="date" class="settings-input" [(ngModel)]="settings.expiry_threshold"
+                  placeholder="YYYY-MM-DD">
+                <span class="settings-hint" *ngIf="settings.expiry_threshold">
+                  Products expiring before {{ settings.expiry_threshold | date:'dd MMM yyyy' }} → Defective
+                </span>
+                <span class="settings-hint" *ngIf="!settings.expiry_threshold">No threshold set — all expiry dates accepted</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Danger Alert Trigger -->
+          <div class="panel settings-card">
+            <div class="panel-header">
+              <mat-icon>notification_important</mat-icon>
+              <h2>Manual Danger Alert</h2>
+            </div>
+            <div class="settings-body">
+              <p class="settings-desc">
+                Broadcasts an emergency alert to all workers and admins via email + in-app notification.
+              </p>
+              <div class="settings-field">
+                <label>Alert Message</label>
+                <input type="text" class="settings-input"
+                  [(ngModel)]="manualDangerMessage"
+                  placeholder="e.g. Conveyor fault — stop production immediately">
+              </div>
+              <button class="btn-danger-send" (click)="triggerManualDangerAlert()"
+                [disabled]="sendingDangerAlert || !manualDangerMessage.trim()">
+                <mat-icon>send</mat-icon>
+                {{ sendingDangerAlert ? 'Sending...' : 'Send Danger Alert' }}
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Save button -->
+        <div class="settings-save-row">
+          <button class="btn-save-settings" (click)="saveSettings()" [disabled]="settingsSaving">
+            <mat-icon>save</mat-icon>
+            {{ settingsSaving ? 'Saving...' : (settingsSuccess ? 'Saved!' : 'Save Settings') }}
+          </button>
+        </div>
+
       </section>
 
     </div>

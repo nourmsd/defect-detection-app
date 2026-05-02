@@ -10,9 +10,13 @@ const inspectionSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  detected_date: {
+    type: String,
+    default: 'missing'   // "DD MMM" from AI classifier, or "missing" if unreadable
+  },
   device: {
     type: String,
-    default: 'Camera 1'
+    default: 'Niryo Camera'
   },
   timestamp: {
     type: Date,
@@ -24,7 +28,6 @@ const inspectionSchema = new mongoose.Schema({
   }
 });
 
-// Indexes to avoid full collection scans on every query
 inspectionSchema.index({ timestamp: -1 });
 inspectionSchema.index({ label: 1, timestamp: -1 });
 

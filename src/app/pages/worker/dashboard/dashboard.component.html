@@ -1,384 +1,562 @@
-<div class="qc-root" [class.light-mode]="themeService.isLight">
+<div class="hmi-root" [class.light-mode]="themeService.isLight" [class.hmi-dark]="!themeService.isLight">
 
-  <!-- ═══ TOP BAR ═══ -->
-  <header class="qc-topbar">
-    <div class="qc-brand">
-      <div class="qc-logo"><mat-icon>precision_manufacturing</mat-icon></div>
-      <div class="qc-brand-text">
-        <span class="qc-brand-name">Agro-Tech Demonstrator</span>
-        <span class="qc-brand-sub">INTELLIGENT QUALITY CONTROL</span>
+  <!-- ══════════════════════════ TOP BAR ══════════════════════════ -->
+  <header class="hmi-topbar">
+    <div class="hmi-brand">
+      <div class="hmi-logo"><mat-icon>precision_manufacturing</mat-icon></div>
+      <div class="hmi-brand-text">
+        <span class="hmi-brand-name">Agro-Tech Demonstrator</span>
+        <span class="hmi-brand-sub">WORKER STATION · ROBOT OPERATOR HMI</span>
       </div>
     </div>
-    <div class="qc-devices">
-      Raspberry Pi &nbsp;·&nbsp; Niryo Ned2 &nbsp;·&nbsp; Siemens S7-1200
-    </div>
-    <div class="qc-topbar-right">
-      <span class="qc-live-dot"></span>
-      <span class="qc-clock">{{ currentTime }}</span>
-      <button mat-icon-button (click)="themeService.toggleTheme()" class="qc-icon-btn">
+
+    <div class="hmi-topbar-right">
+      <div class="hmi-status-strip">
+        <div class="hmi-pill" [class.pill-on]="systemLinks.aiModel" [class.pill-off]="!systemLinks.aiModel">
+          <span class="hmi-pill-dot"></span>AI MODEL
+        </div>
+        <div class="hmi-pill" [class.pill-on]="systemLinks.camera" [class.pill-off]="!systemLinks.camera">
+          <span class="hmi-pill-dot"></span>CAMERA
+        </div>
+        <div class="hmi-pill" [class.pill-on]="isRobotConnected" [class.pill-off]="!isRobotConnected">
+          <span class="hmi-pill-dot"></span>ROBOT TCP
+        </div>
+        <div class="hmi-pill pill-amber" *ngIf="robotBusy">
+          <span class="hmi-pill-dot"></span>BUSY
+        </div>
+      </div>
+      <div class="hmi-topbar-divider"></div>
+      <span class="hmi-live-dot"></span>
+      <span class="hmi-clock">{{ currentTime }}</span>
+      <button class="hmi-icon-btn" (click)="themeService.toggleTheme()"
+        [matTooltip]="themeService.isLight ? 'Dark Mode' : 'Light Mode'">
         <mat-icon>{{ themeService.isLight ? 'dark_mode' : 'light_mode' }}</mat-icon>
       </button>
-      <button mat-icon-button (click)="logout()" class="qc-icon-btn">
+      <button class="hmi-icon-btn" (click)="logout()" matTooltip="Logout">
         <mat-icon>logout</mat-icon>
       </button>
     </div>
   </header>
 
-  <!-- ═══ ROBOT ALERT BANNERS (dismissible) ═══ -->
-  <div class="qc-banner-zone" *ngIf="visibleBannerAlerts.length > 0">
-    <div *ngFor="let banner of visibleBannerAlerts"
-         class="qc-banner-alert"
-         [class.banner-critical]="banner.severity === 'critical'"
-         [class.banner-warning]="banner.severity === 'warning'">
-      <div class="qc-banner-content">
-        <span class="qc-banner-icon">{{ banner.icon }}</span>
-        <span class="qc-banner-text">{{ banner.label }}</span>
-      </div>
-      <button class="qc-banner-dismiss" (click)="dismissBannerAlert(banner.id)" title="Dismiss alert">
+  <!-- ══════════════════════════ ALARM BANNERS (dynamic, top-fixed) ══════════════════════════ -->
+  <div class="hmi-alarm-overlay" *ngIf="alarms.length > 0">
+    <div *ngFor="let alarm of alarms.slice(0, 3)" class="hmi-alarm-banner"
+      [class.banner-crit]="alarm.level === 'critical' || alarm.level === 'error'"
+      [class.banner-warn]="alarm.level === 'warning'"
+      [class.banner-info]="alarm.level === 'info'">
+      <mat-icon class="banner-icon">
+        {{ (alarm.level === 'critical' || alarm.level === 'error') ? 'error' : alarm.level === 'warning' ? 'warning' : 'info' }}
+      </mat-icon>
+      <span class="banner-msg">{{ alarm.message }}</span>
+      <span class="banner-time">{{ alarm.timestamp | date:'HH:mm:ss' }}</span>
+      <span class="banner-more-tag" *ngIf="alarms.length > 3 && alarm === alarms[2]">
+        +{{ alarms.length - 3 }} more
+      </span>
+      <button class="banner-dismiss" (click)="clearAlarms()" matTooltip="Clear all alarms">
         <mat-icon>close</mat-icon>
       </button>
     </div>
   </div>
 
-  <!-- ═══ ROBOT ALERTS BAR (real-time from socket) ═══ -->
-  <div class="qc-alert-bar" *ngIf="activeAlerts.length > 0">
-    <div *ngFor="let alert of activeAlerts"
-         class="qc-alert-item"
-         [class.alert-warning]="alert.severity === 'warning'"
-         [class.alert-critical]="alert.severity === 'critical'">
-      <mat-icon>{{ alert.severity === 'critical' ? 'error' : 'warning' }}</mat-icon>
-      <span>{{ alert.message }}</span>
-    </div>
-  </div>
+  <!-- ══════════════════════════ 3-COLUMN BODY ══════════════════════════ -->
+  <div class="hmi-body">
 
-  <!-- ═══ BODY ═══ -->
-  <div class="qc-body">
+    <!-- ═══════════════ LEFT: Camera · AI · Status ═══════════════ -->
+    <div class="hmi-col hmi-col-left">
 
-    <!-- ── LEFT COLUMN ── -->
-    <div class="qc-left">
-
-      <!-- 1. LIVE CAMERA FEED -->
-      <div class="qc-card qc-camera-card">
-        <div class="qc-field-label">LIVE CAMERA FEED
-          <span class="qc-tooltip-icon" matTooltip="Live video stream from the Ned2 robot's onboard camera. The robot positions itself above the conveyor belt to capture each package as it arrives.">?</span>
+      <!-- Camera Feed — fills available height -->
+      <div class="hmi-card hmi-camera-card">
+        <div class="hmi-card-label">
+          LIVE CAMERA FEED
+          <span class="hmi-fps-tag">{{ streamHealth.avg_fps > 0 ? (streamHealth.avg_fps | number:'1.0-1') : (fps > 0 ? fps : '0.0') }} FPS</span>
         </div>
-        <div class="qc-camera-box">
+        <div class="hmi-camera-box">
           <span class="c-tl"></span><span class="c-tr"></span>
           <span class="c-bl"></span><span class="c-br"></span>
-          <span class="qc-fps-badge">FPS: {{ fps > 0 ? fps : '—' }}</span>
-
-          <!-- Live MJPEG stream from Niryo robot -->
-          <img class="qc-stream-img"
-               [src]="cameraStreamUrl"
-               [class.hidden]="!streamActive"
-               (load)="onStreamLoad()"
-               (error)="onStreamError()"
-               alt="Niryo camera stream">
-
-          <!-- Placeholder shown when stream is not yet available -->
-          <div class="qc-cam-placeholder" [class.hidden]="streamActive">
+          <img class="hmi-stream-img" [src]="cameraStreamUrl" [class.hidden]="!streamActive"
+            (load)="onStreamLoad()" (error)="onStreamError()" alt="camera">
+          <div class="hmi-cam-placeholder" [class.hidden]="streamActive">
             <mat-icon>videocam_off</mat-icon>
-            <span>Connecting to Niryo camera…</span>
-            <span class="qc-cam-url">{{ cameraStreamUrl }}</span>
+            <span>{{ streamHealth.camera_status }}</span>
+            <span class="hmi-cam-sub">{{ streamHealth.status }}</span>
           </div>
-
-          <div class="qc-scanline"></div>
-
-          <div class="qc-model-badge"
-               [class.badge-ok]="detectionStatus === 'NORMAL'"
-               [class.badge-nok]="detectionStatus === 'DEFECTIVE'">
+          <div class="hmi-scanline"></div>
+          <div class="hmi-model-badge"
+            [class.badge-ok]="detectionStatus === 'NORMAL'"
+            [class.badge-nok]="detectionStatus === 'DEFECTIVE'">
             <mat-icon *ngIf="detectionStatus === 'WAITING'">hourglass_empty</mat-icon>
             <mat-icon *ngIf="detectionStatus === 'NORMAL'">check_circle</mat-icon>
             <mat-icon *ngIf="detectionStatus === 'DEFECTIVE'">warning</mat-icon>
-            <span *ngIf="detectionStatus === 'WAITING'">WAITING</span>
-            <span *ngIf="detectionStatus === 'NORMAL'">CONFORMING</span>
-            <span *ngIf="detectionStatus === 'DEFECTIVE'">DEFECTIVE</span>
+            <span>{{ detectionStatus === 'NORMAL' ? 'CONFORMING' : detectionStatus }}</span>
           </div>
         </div>
-        <div class="qc-cam-footer">
-          <span>FPS: {{ fps > 0 ? fps : '—' }}</span>
-          <span class="qc-mqtt-badge">MQTT: {{ systemLinks.mqtt ? 'Connected' : 'Disconnected' }}</span>
+        <div class="hmi-cam-meta">
+          <div class="hmi-meta-cell">
+            <span class="hmi-meta-lbl">STREAM</span>
+            <span class="hmi-meta-val">{{ streamHealth.status === 'online' ? 'LIVE' : (streamHealth.status | uppercase) }}</span>
+          </div>
+          <div class="hmi-meta-cell">
+            <span class="hmi-meta-lbl">FRAMES</span>
+            <span class="hmi-meta-val">{{ streamHealth.frames_captured }}</span>
+          </div>
+          <div class="hmi-meta-cell">
+            <span class="hmi-meta-lbl">AVG FPS</span>
+            <span class="hmi-meta-val">{{ streamHealth.avg_fps > 0 ? (streamHealth.avg_fps | number:'1.0-1') : '0.0' }}</span>
+          </div>
+          <div class="hmi-meta-cell">
+            <span class="hmi-meta-lbl">FRAME AGE</span>
+            <span class="hmi-meta-val">{{ streamHealth.last_frame_age_sec }}s</span>
+          </div>
         </div>
       </div>
 
-      <!-- 2. DETECTION + CONFIDENCE side by side -->
-      <div class="qc-row-two">
-
-        <!-- DETECTION -->
-        <div class="qc-card qc-detection-card">
-          <div class="qc-field-label">DETECTION
-            <span class="qc-tooltip-icon" matTooltip="AI model's binary decision: CONFORMING (good product) or DEFECTIVE (anomaly detected). WAITING = conveyor is idle.">?</span>
+      <!-- AI Pipeline -->
+      <div class="hmi-card hmi-ai-card">
+        <div class="hmi-card-label">
+          LIVE AI PIPELINE
+          <span class="hmi-live-pulse"
+            [class.pulse-active]="inferenceStatus !== 'IDLE' && inferenceStatus !== 'NO_DETECTION'"></span>
+        </div>
+        <div class="hmi-inf-status"
+          [class.inf-reading]="inferenceStatus === 'READING' || inferenceStatus === 'PROCESSING'"
+          [class.inf-ok]="inferenceStatus === 'FINAL_NORMAL'"
+          [class.inf-nok]="inferenceStatus === 'FINAL_DEFECTIVE'"
+          [class.inf-idle]="inferenceStatus === 'NO_DETECTION' || inferenceStatus === 'IDLE'">
+          <mat-icon *ngIf="inferenceStatus === 'IDLE'">hourglass_empty</mat-icon>
+          <mat-icon *ngIf="inferenceStatus === 'NO_DETECTION'">search_off</mat-icon>
+          <mat-icon *ngIf="inferenceStatus === 'PROCESSING' || inferenceStatus === 'READING'">manage_search</mat-icon>
+          <mat-icon *ngIf="inferenceStatus === 'FINAL_NORMAL'">check_circle</mat-icon>
+          <mat-icon *ngIf="inferenceStatus === 'FINAL_DEFECTIVE'">warning</mat-icon>
+          {{ inferenceStatus.replace('_', ' ') }}
+        </div>
+        <div class="hmi-inf-grid">
+          <div class="hmi-inf-cell">
+            <span class="hmi-inf-val">{{ liveDate }}</span>
+            <span class="hmi-inf-lbl">DATE READ</span>
           </div>
-          <div class="qc-detection-body">
-            <div class="qc-det-box"
-                 [class.det-ok]="detectionStatus === 'NORMAL'"
-                 [class.det-nok]="detectionStatus === 'DEFECTIVE'">
+          <div class="hmi-inf-cell">
+            <span class="hmi-inf-val"
+              [class.val-green]="liveConf >= 70"
+              [class.val-amber]="liveConf >= 40 && liveConf < 70"
+              [class.val-red]="liveConf > 0 && liveConf < 40">
+              {{ liveConf > 0 ? liveConf + '%' : '—' }}
+            </span>
+            <span class="hmi-inf-lbl">CONFIDENCE</span>
+          </div>
+          <div class="hmi-inf-cell">
+            <span class="hmi-inf-val">{{ liveYoloCount }}</span>
+            <span class="hmi-inf-lbl">DETECTIONS</span>
+          </div>
+          <div class="hmi-inf-cell">
+            <span class="hmi-inf-val">{{ inferenceFps > 0 ? (inferenceFps | number:'1.0-1') : '—' }}</span>
+            <span class="hmi-inf-lbl">INF FPS</span>
+          </div>
+          <div class="hmi-inf-cell">
+            <span class="hmi-inf-val">{{ inferenceMs > 0 ? inferenceMs + 'ms' : '—' }}</span>
+            <span class="hmi-inf-lbl">CYCLE TIME</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- System Status -->
+      <div class="hmi-card hmi-sysstat-card">
+        <div class="hmi-card-label">SYSTEM STATUS</div>
+        <div class="hmi-sys-item">
+          <span class="hmi-sys-dot" [class.sys-on]="systemLinks.aiModel" [class.sys-off]="!systemLinks.aiModel"></span>
+          <span class="hmi-sys-name">AI Vision Model</span>
+          <span class="hmi-sys-tag" [class.tag-on]="systemLinks.aiModel">{{ systemLinks.aiModel ? 'ACTIVE' : 'WAIT' }}</span>
+        </div>
+        <div class="hmi-sys-item">
+          <span class="hmi-sys-dot" [class.sys-on]="systemLinks.camera" [class.sys-off]="!systemLinks.camera"></span>
+          <span class="hmi-sys-name">Camera Stream</span>
+          <span class="hmi-sys-tag" [class.tag-on]="systemLinks.camera">{{ systemLinks.camera ? 'LIVE' : 'OFF' }}</span>
+        </div>
+        <div class="hmi-sys-item">
+          <span class="hmi-sys-dot" [class.sys-on]="isRobotConnected" [class.sys-off]="!isRobotConnected"></span>
+          <span class="hmi-sys-name">Robot TCP</span>
+          <span class="hmi-sys-tag" [class.tag-on]="isRobotConnected">{{ isRobotConnected ? 'OK' : 'OFF' }}</span>
+        </div>
+        <div class="hmi-sys-item">
+          <span class="hmi-sys-dot" [class.sys-on]="streamHealth.pyniryo_available" [class.sys-off]="!streamHealth.pyniryo_available"></span>
+          <span class="hmi-sys-name">PyNiryo SDK</span>
+          <span class="hmi-sys-tag" [class.tag-on]="streamHealth.pyniryo_available">{{ streamHealth.pyniryo_available ? 'OK' : 'OFF' }}</span>
+        </div>
+      </div>
+
+    </div><!-- /hmi-col-left -->
+
+
+    <!-- ═══════════════ CENTER: Analytics ═══════════════ -->
+    <div class="hmi-col hmi-col-center">
+
+      <!-- KPI Strip — compact -->
+      <div class="hmi-stats-row">
+        <div class="hmi-kpi-card">
+          <span class="hmi-kpi-val cyan">{{ totalInspections }}</span>
+          <span class="hmi-kpi-lbl">TOTAL INSPECTED</span>
+        </div>
+        <div class="hmi-kpi-card">
+          <span class="hmi-kpi-val green">{{ normalCount }}</span>
+          <span class="hmi-kpi-lbl">CONFORMING</span>
+        </div>
+        <div class="hmi-kpi-card">
+          <span class="hmi-kpi-val red">{{ defectCount }}</span>
+          <span class="hmi-kpi-lbl">DEFECTIVE</span>
+        </div>
+      </div>
+
+      <!-- Defect Rate Gauge -->
+      <div class="hmi-card hmi-donut-card">
+        <div class="hmi-card-label">DEFECT RATE</div>
+        <div class="hmi-donut-body">
+          <div class="hmi-donut-wrap">
+            <svg class="hmi-donut-svg" viewBox="0 0 160 160">
+              <circle class="hmi-donut-track" cx="80" cy="80" r="62"/>
+              <circle class="hmi-donut-fill" cx="80" cy="80" r="62"
+                [class.donut-green]="rejectionRate <= 5"
+                [class.donut-amber]="rejectionRate > 5 && rejectionRate <= 15"
+                [class.donut-red]="rejectionRate > 15"
+                [style.strokeDasharray]="(rejectionRate / 100 * 389.6) + ' 389.6'"/>
+            </svg>
+            <div class="hmi-donut-center">
+              <span class="hmi-donut-pct"
+                [class.pct-green]="rejectionRate <= 5"
+                [class.pct-amber]="rejectionRate > 5 && rejectionRate <= 15"
+                [class.pct-red]="rejectionRate > 15">{{ rejectionRate }}%</span>
+              <span class="hmi-donut-label">DEFECT</span>
             </div>
-            <div class="qc-det-status"
-                 [class.det-status-ok]="detectionStatus === 'NORMAL'"
-                 [class.det-status-nok]="detectionStatus === 'DEFECTIVE'">
+          </div>
+          <div class="hmi-donut-metrics">
+            <div class="hmi-dmetric"
+              [class.dmetric-warn]="rejectionRate > 5 && rejectionRate <= 15"
+              [class.dmetric-alert]="rejectionRate > 15">
+              <span class="hmi-dmetric-val"
+                [class.val-green]="rejectionRate <= 5"
+                [class.val-amber]="rejectionRate > 5 && rejectionRate <= 15"
+                [class.val-red]="rejectionRate > 15">{{ rejectionRate }}%</span>
+              <span class="hmi-dmetric-lbl">REJECTION RATE</span>
+            </div>
+            <div class="hmi-dmetric">
+              <span class="hmi-dmetric-val val-cyan">{{ totalInspections > 0 ? (100 - rejectionRate) : 0 }}%</span>
+              <span class="hmi-dmetric-lbl">PASS RATE</span>
+            </div>
+            <div class="hmi-dmetric">
+              <span class="hmi-dmetric-val">{{ defectCount }} / {{ totalInspections }}</span>
+              <span class="hmi-dmetric-lbl">REJECTED / TOTAL</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detection History — grows to fill -->
+      <div class="hmi-card hmi-hist-card">
+        <div class="hmi-card-label">
+          DETECTION HISTORY
+          <span class="hmi-badge" *ngIf="inspections.length > 0">{{ inspections.length }}</span>
+        </div>
+        <div class="hmi-hist-dots">
+          <ng-container *ngIf="visibleInspections.length > 0">
+            <span *ngFor="let item of visibleInspections" class="hmi-dot"
+              [class.dot-ok]="item.label === 'OK'"
+              [class.dot-nok]="item.label !== 'OK'"
+              [title]="(item.label === 'OK' ? 'Conforming' : 'Defective') + ' · ' + (item.timestamp | date:'HH:mm:ss')">
+            </span>
+          </ng-container>
+          <ng-container *ngIf="inspections.length === 0">
+            <span *ngFor="let i of [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]"
+              class="hmi-dot dot-empty"></span>
+          </ng-container>
+        </div>
+        <div class="hmi-hist-footer">
+          <div class="hmi-hist-legend">
+            <span class="hmi-leg-item"><span class="hmi-leg-dot" style="background:#22c55e"></span>Conforming</span>
+            <span class="hmi-leg-item"><span class="hmi-leg-dot" style="background:#ef4444"></span>Defective</span>
+          </div>
+          <div class="hmi-hist-pager" *ngIf="histTotalPages > 1">
+            <button class="hmi-pager-btn" [disabled]="histPage === 1" (click)="histPage = histPage - 1">&#8249;</button>
+            <span class="hmi-pager-info">{{ histPage }} / {{ histTotalPages }}</span>
+            <button class="hmi-pager-btn" [disabled]="histPage === histTotalPages" (click)="histPage = histPage + 1">&#8250;</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Current Inspection — merged card -->
+      <div class="hmi-card hmi-current-insp">
+        <div class="hmi-card-label">CURRENT INSPECTION</div>
+        <div class="hmi-ci-body">
+
+          <!-- Result -->
+          <div class="hmi-ci-section">
+            <div class="hmi-ci-icon"
+              [class.ci-icon-ok]="detectionStatus === 'NORMAL'"
+              [class.ci-icon-nok]="detectionStatus === 'DEFECTIVE'">
+              <mat-icon *ngIf="detectionStatus === 'WAITING'">hourglass_empty</mat-icon>
+              <mat-icon *ngIf="detectionStatus === 'NORMAL'">check_circle</mat-icon>
+              <mat-icon *ngIf="detectionStatus === 'DEFECTIVE'">cancel</mat-icon>
+            </div>
+            <span class="hmi-ci-status"
+              [class.val-green]="detectionStatus === 'NORMAL'"
+              [class.val-red]="detectionStatus === 'DEFECTIVE'">
               {{ detectionStatus === 'NORMAL' ? 'CONFORMING' : detectionStatus }}
-            </div>
+            </span>
+            <span class="hmi-ci-lbl">RESULT</span>
           </div>
-        </div>
 
-        <!-- CONFIDENCE GAUGE — score comes from AI model via backend -->
-        <div class="qc-card qc-confidence-card">
-          <div class="qc-field-label">CONFIDENCE
-            <span class="qc-tooltip-icon" matTooltip="How certain the AI model is about its decision (0–100%). Score is provided by the robot's AI inference engine — no manual input.">?</span>
-          </div>
-          <div class="qc-gauge-wrap">
-            <svg class="qc-gauge-svg" viewBox="0 0 100 60">
-              <path class="qc-gauge-bg" d="M 10 55 A 40 40 0 0 1 90 55"/>
-              <path class="qc-gauge-fill"
-                    d="M 10 55 A 40 40 0 0 1 90 55"
-                    [style.strokeDasharray]="(confidenceScore / 100 * 125.6) + ' 125.6'"
-                    [class.gauge-green]="detectionStatus === 'NORMAL'"
-                    [class.gauge-red]="detectionStatus === 'DEFECTIVE'"/>
-            </svg>
-            <div class="qc-gauge-center">
-              <span class="qc-gauge-val"
-                    [class.val-green]="detectionStatus === 'NORMAL'"
-                    [class.val-red]="detectionStatus === 'DEFECTIVE'">
-                {{ detectionStatus !== 'WAITING' ? confidenceScore : '—' }}
-              </span>
-              <span class="qc-gauge-lbl">AI SCORE</span>
-            </div>
-          </div>
-          <div class="qc-gauge-min">FROM AI MODEL</div>
-        </div>
+          <div class="hmi-ci-sep"></div>
 
+          <!-- AI Confidence semicircle gauge -->
+          <div class="hmi-ci-section">
+            <div class="hmi-ci-gauge-wrap">
+              <svg class="hmi-ci-gauge-svg" viewBox="0 0 120 72">
+                <path class="hmi-cg-track" d="M 12 66 A 48 48 0 0 1 108 66"/>
+                <path class="hmi-cg-fill" d="M 12 66 A 48 48 0 0 1 108 66"
+                  [style.strokeDasharray]="(confidenceScore / 100 * 150.8) + ' 150.8'"
+                  [class.cg-green]="detectionStatus === 'NORMAL'"
+                  [class.cg-red]="detectionStatus === 'DEFECTIVE'"/>
+              </svg>
+              <div class="hmi-ci-gauge-num"
+                [class.val-green]="detectionStatus === 'NORMAL'"
+                [class.val-red]="detectionStatus === 'DEFECTIVE'">
+                {{ detectionStatus !== 'WAITING' ? confidenceScore + '%' : '—' }}
+              </div>
+            </div>
+            <span class="hmi-ci-lbl">AI CONFIDENCE</span>
+          </div>
+
+          <div class="hmi-ci-sep"></div>
+
+          <!-- Last Detection -->
+          <div class="hmi-ci-section">
+            <span class="hmi-ci-time">{{ lastDetectionTime }}</span>
+            <span class="hmi-ci-lbl">LAST DETECTED</span>
+            <span class="hmi-ci-date"
+              [class.val-green]="lastDetectedDate !== 'missing'"
+              [class.val-muted]="lastDetectedDate === 'missing'">
+              {{ lastDetectedDate !== 'missing' ? lastDetectedDate : '— none —' }}
+            </span>
+            <span class="hmi-ci-lbl">EXPIRY DATE</span>
+          </div>
+
+          <div class="hmi-ci-sep"></div>
+
+          <!-- Proc Time -->
+          <div class="hmi-ci-section">
+            <span class="hmi-ci-proc">{{ lastProcessingTime > 0 ? lastProcessingTime : '—' }}</span>
+            <span class="hmi-ci-lbl">PROC TIME (s)</span>
+          </div>
+
+        </div>
       </div>
 
-    </div><!-- /left -->
+    </div><!-- /hmi-col-center -->
 
-    <!-- ── RIGHT AREA ── -->
-    <div class="qc-right">
 
-      <!-- TOP ROW: 3 STAT CARDS -->
-      <div class="qc-stats-row">
+    <!-- ═══════════════ RIGHT: Robot Controls · Positions ═══════════════ -->
+    <div class="hmi-col hmi-col-right">
 
-        <div class="qc-stat-card">
-          <div class="qc-stat-help">
-            <span class="qc-tooltip-icon sm" matTooltip="Total number of packages inspected since the session started or last reset.">?</span>
-          </div>
-          <div class="qc-stat-circle qc-circle-blue"><span>{{ totalInspections }}</span></div>
-          <div class="qc-stat-label">TOTAL INSPECTED</div>
-        </div>
-
-        <div class="qc-stat-card">
-          <div class="qc-stat-help">
-            <span class="qc-tooltip-icon sm" matTooltip="Packages that passed AI quality inspection and were placed in the conforming storage zone.">?</span>
-          </div>
-          <div class="qc-stat-circle qc-circle-green"><span>{{ normalCount }}</span></div>
-          <div class="qc-stat-label">CONFORMING</div>
-        </div>
-
-        <div class="qc-stat-card">
-          <div class="qc-stat-help">
-            <span class="qc-tooltip-icon sm" matTooltip="Packages rejected by the AI model. The robot places them in the reject bin.">?</span>
-          </div>
-          <div class="qc-stat-circle qc-circle-red"><span>{{ defectCount }}</span></div>
-          <div class="qc-stat-label">DEFECTIVE</div>
-        </div>
-
-      </div>
-
-      <!-- MID ROW: DEFECT RATE + LAST 20 -->
-      <div class="qc-mid-row">
-
-        <!-- DEFECT RATE donut -->
-        <div class="qc-card qc-defect-card">
-          <div class="qc-field-label">DEFECT RATE
-            <span class="qc-tooltip-icon" matTooltip="Percentage of inspected packages that were rejected. Green ≤5%, amber 5–15%, red >15%.">?</span>
-          </div>
-          <div class="qc-donut-wrap">
-            <svg class="qc-donut-svg" viewBox="0 0 100 100">
-              <circle class="qc-donut-bg" cx="50" cy="50" r="38"/>
-              <circle class="qc-donut-fill" cx="50" cy="50" r="38"
-                      [attr.stroke-dasharray]="(rejectionRate / 100 * 238.76) + ' 238.76'"
-                      [class.donut-green]="rejectionRate <= 5"
-                      [class.donut-amber]="rejectionRate > 5 && rejectionRate <= 15"
-                      [class.donut-red]="rejectionRate > 15"/>
-            </svg>
-            <div class="qc-donut-center">
-              <span class="qc-donut-pct"
-                    [class.pct-green]="rejectionRate <= 5"
-                    [class.pct-amber]="rejectionRate > 5 && rejectionRate <= 15"
-                    [class.pct-red]="rejectionRate > 15">
-                {{ rejectionRate }}%
-              </span>
-              <span class="qc-donut-sub">REJECTION</span>
-            </div>
-          </div>
-          <div class="qc-defect-footer">REJECTION RATE</div>
-        </div>
-
-        <!-- LAST 20 DETECTIONS -->
-        <div class="qc-card qc-hist-card">
-          <div class="qc-field-label">LAST 20 DETECTIONS
-            <span class="qc-tooltip-icon" matTooltip="Visual timeline of the last 20 inspected packages. Green = conforming, red = defective.">?</span>
-          </div>
-          <div class="qc-hist-body">
-            <div class="qc-hist-items">
-              <ng-container *ngIf="inspections.length > 0">
-                <div *ngFor="let item of inspections.slice(0,20)" class="qc-hist-dot-wrap">
-                  <span class="qc-hist-dot"
-                        [class.dot-ok]="item.label === 'OK'"
-                        [class.dot-nok]="item.label !== 'OK'"
-                        [title]="(item.label === 'OK' ? 'Conforming' : 'Defective') + ' · ' + (item.timestamp | date:'HH:mm:ss')">
-                  </span>
-                </div>
-              </ng-container>
-              <ng-container *ngIf="inspections.length === 0">
-                <span *ngFor="let i of [1,2,3,4,5,6,7,8,9,10]" class="qc-hist-dot dot-empty"></span>
-              </ng-container>
-            </div>
-            <div class="qc-hist-legend">
-              <span class="qc-legend-item">
-                <span class="qc-leg-dot" style="background:#22c55e"></span>Conforming
-              </span>
-              <span class="qc-legend-item">
-                <span class="qc-leg-dot" style="background:#ef4444"></span>Defective
-              </span>
-            </div>
-          </div>
-        </div>
-
-      </div><!-- /mid-row -->
-
-      <!-- BOTTOM ROW -->
-      <div class="qc-bottom-row">
-
-        <!-- LAST DETECTION -->
-        <div class="qc-card qc-lastdet-card">
-          <div class="qc-field-label">LAST DETECTION
-            <span class="qc-tooltip-icon" matTooltip="Exact timestamp of the most recently inspected package.">?</span>
-          </div>
-          <div class="qc-lastdet-body">
-            <div class="qc-lastdet-val">{{ lastDetectionTime }}</div>
-            <div class="qc-lastdet-sub">TIMESTAMP</div>
-          </div>
-        </div>
-
-        <!-- PROCESSING TIME -->
-        <div class="qc-card qc-proctime-card">
-          <div class="qc-field-label">PROCESSING TIME
-            <span class="qc-tooltip-icon" matTooltip="Time in seconds for the Raspberry Pi to capture, run AI inference, and return a decision.">?</span>
-          </div>
-          <div class="qc-proctime-body">
-            <div class="qc-proctime-val">{{ lastProcessingTime > 0 ? lastProcessingTime : '—' }}</div>
-            <div class="qc-proctime-sub">SECONDS</div>
-          </div>
-        </div>
-
-        <!-- SYSTEM LINKS -->
-        <div class="qc-card qc-links-card">
-          <div class="qc-field-label">SYSTEM LINKS
-            <span class="qc-tooltip-icon" matTooltip="Real-time status of all subsystem connections. All links must be green before pressing Start.">?</span>
-          </div>
-          <div class="qc-links-list">
-            <div class="qc-link-row">
-              <span class="qc-link-dot" [class.link-green]="isRobotConnected" [class.link-red]="!isRobotConnected"></span>
-              <span>Robot: {{ isRobotConnected ? 'Connected' : 'Disconnected' }}</span>
-            </div>
-            <div class="qc-link-row">
-              <span class="qc-link-dot" [class.link-green]="robotHealth?.hardware_status?.connection_up || isRobotConnected" [class.link-red]="!(robotHealth?.hardware_status?.connection_up || isRobotConnected)"></span>
-              <span>Hardware: {{ (robotHealth?.hardware_status?.connection_up || isRobotConnected) ? 'OK' : 'Down' }}</span>
-            </div>
-            <div class="qc-link-row">
-              <span class="qc-link-dot" [class.link-green]="systemLinks.camera" [class.link-red]="!systemLinks.camera"></span>
-              <span>Camera: {{ systemLinks.camera ? 'Active' : 'Inactive' }}</span>
-            </div>
-            <div class="qc-link-row">
-              <span class="qc-link-dot" [class.link-green]="!robotHealth?.hardware_status?.calibration_needed" [class.link-red]="robotHealth?.hardware_status?.calibration_needed"></span>
-              <span>Calibration: {{ robotHealth?.hardware_status?.calibration_needed ? 'Needed' : 'OK' }}</span>
-            </div>
-            <div class="qc-link-row">
-              <span class="qc-link-dot" [class.link-green]="systemLinks.mongodb" [class.link-red]="!systemLinks.mongodb"></span>
-              <span>MongoDB: {{ systemLinks.mongodb ? 'Connected' : 'Disconnected' }}</span>
-            </div>
-            <div class="qc-link-row" *ngIf="robotHealth?.hardware_status?.rpi_temperature">
-              <span class="qc-link-dot" [class.link-green]="robotHealth!.hardware_status.rpi_temperature < 75" [class.link-red]="robotHealth!.hardware_status.rpi_temperature >= 75"></span>
-              <span>RPi Temp: {{ robotHealth!.hardware_status.rpi_temperature }}°C</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- RESET -->
-        <div class="qc-card qc-reset-card">
-          <button class="qc-reset-btn" (click)="resetCounters()">
-            <mat-icon>restart_alt</mat-icon>
-            Reset Counters
-          </button>
-        </div>
-
-      </div><!-- /bottom-row -->
-
-      <!-- ROBOT CONTROLS (worker only — replaces Niryo Studio) -->
-      <div class="qc-card qc-robot-controls-card">
-        <div class="qc-field-label">ROBOT CONTROLS
-          <span class="qc-tooltip-icon" matTooltip="Direct robot controls — replaces Niryo Studio. Buttons are disabled when the robot is disconnected.">?</span>
-          <span class="qc-robot-status-badge"
-                [class.badge-connected]="isRobotConnected"
-                [class.badge-disconnected]="!isRobotConnected">
-            {{ isRobotConnected ? 'CONNECTED' : 'DISCONNECTED' }}
+      <!-- Robot Controls -->
+      <div class="hmi-card hmi-robot-panel">
+        <div class="hmi-card-label">
+          ROBOT CONTROLS
+          <span class="hmi-robot-conn-badge"
+            [class.badge-connected]="isRobotConnected"
+            [class.badge-disconnected]="!isRobotConnected">
+            {{ isRobotConnected ? '● CONNECTED' : '● OFFLINE' }}
           </span>
         </div>
-        <div class="qc-robot-controls">
-          <button class="qc-robot-btn qc-btn-danger" (click)="triggerRobotAction('stop_command')" [disabled]="actionLoading">
-            <mat-icon>stop_circle</mat-icon> Emergency Stop
+
+        <div class="hmi-robot-status-strip">
+          <div class="hmi-rs-cell">
+            <span class="hmi-rs-lbl">TCP</span>
+            <span class="hmi-rs-val" [class.val-green]="isRobotConnected" [class.val-red]="!isRobotConnected">
+              {{ isRobotConnected ? 'OK' : 'OFFLINE' }}
+            </span>
+          </div>
+          <div class="hmi-rs-cell">
+            <span class="hmi-rs-lbl">STATE</span>
+            <span class="hmi-rs-val" [class.val-amber]="robotBusy" [class.val-green]="!robotBusy && isRobotConnected">
+              {{ robotBusy ? 'RUNNING' : (isRobotConnected ? 'IDLE' : '—') }}
+            </span>
+          </div>
+          <div class="hmi-rs-cell">
+            <span class="hmi-rs-lbl">MODE</span>
+            <span class="hmi-rs-val" [class.val-amber]="freemotionActive" [class.val-cyan]="!freemotionActive && isRobotConnected">
+              {{ freemotionActive ? 'FREE' : (isRobotConnected ? 'AUTO' : '—') }}
+            </span>
+          </div>
+          <div class="hmi-rs-cell">
+            <span class="hmi-rs-lbl">QUEUE</span>
+            <span class="hmi-rs-val" [class.val-amber]="robotQueueSize > 0">{{ isRobotConnected ? robotQueueSize : '—' }}</span>
+          </div>
+          <div class="hmi-rs-cell">
+            <span class="hmi-rs-lbl">LAST ACTION</span>
+            <span class="hmi-rs-val hmi-rs-action">{{ isRobotConnected ? (robotLastAction || '—') : '—' }}</span>
+          </div>
+        </div>
+
+        <button class="hmi-estop-btn"
+          [disabled]="cmdLoading['emergency-stop']"
+          [class.estop-firing]="cmdLoading['emergency-stop']"
+          (click)="robotCommand('emergency-stop', 'EMERGENCY STOP — immediately halt all robot motion. Confirm?')">
+          <span class="hmi-estop-icon">&#9632;</span>
+          {{ cmdLoading['emergency-stop'] ? 'Stopping…' : 'EMERGENCY STOP' }}
+        </button>
+
+        <div class="hmi-ctrl-grid">
+          <button class="hmi-ctrl-btn btn-tool"
+            [disabled]="!isRobotConnected || cmdLoading['reboot-tool']"
+            (click)="robotCommand('reboot-tool', 'Reboot the tool / gripper?')">
+            <mat-icon>build_circle</mat-icon>
+            <span>{{ cmdLoading['reboot-tool'] ? 'REBOOTING…' : 'REBOOT TOOL' }}</span>
           </button>
-          <button class="qc-robot-btn" (click)="triggerRobotAction('calibrate_auto')" [disabled]="actionLoading">
-            <mat-icon>straighten</mat-icon> Auto Calibrate
+          <button class="hmi-ctrl-btn btn-motors"
+            [disabled]="!isRobotConnected || cmdLoading['reboot-motors']"
+            (click)="robotCommand('reboot-motors', 'Reboot robot motors? The arm will briefly lose torque.')">
+            <mat-icon>restart_alt</mat-icon>
+            <span>{{ cmdLoading['reboot-motors'] ? 'REBOOTING…' : 'REBOOT MOTORS' }}</span>
           </button>
-          <button class="qc-robot-btn" (click)="triggerRobotAction('request_new_calibration')" [disabled]="actionLoading">
-            <mat-icon>build</mat-icon> New Calibration
-          </button>
-          <button class="qc-robot-btn qc-btn-warn" (click)="triggerRobotAction('reboot_motors')" [disabled]="actionLoading">
-            <mat-icon>refresh</mat-icon> Reboot Motors
-          </button>
-          <button class="qc-robot-btn" (click)="triggerRobotAction('reboot_tool')" [disabled]="actionLoading">
-            <mat-icon>handyman</mat-icon> Reboot Tool
+          <button class="hmi-ctrl-btn btn-calibrate"
+            [disabled]="cmdLoading['calibrate']"
+            (click)="robotCommand('calibrate', 'Start calibration? The arm will move through calibration positions.')">
+            <mat-icon>my_location</mat-icon>
+            <span>{{ cmdLoading['calibrate'] ? 'CALIBRATING…' : 'CALIBRATION' }}</span>
           </button>
         </div>
-        <div class="qc-action-status" *ngIf="actionMessage"
-             [class.action-success]="actionSuccess"
-             [class.action-error]="!actionSuccess">
+
+        <div class="hmi-action-fb" *ngIf="actionMessage"
+          [class.fb-ok]="actionSuccess" [class.fb-err]="!actionSuccess">
           <mat-icon>{{ actionSuccess ? 'check_circle' : 'error' }}</mat-icon>
           {{ actionMessage }}
         </div>
       </div>
 
-      <!-- MOTOR TEMPERATURES (worker sees real-time temps) -->
-      <div class="qc-card qc-temps-card" *ngIf="robotHealth?.hardware_status?.temperatures?.length">
-        <div class="qc-field-label">MOTOR TEMPERATURES
-          <span class="qc-tooltip-icon" matTooltip="Real-time motor temperatures from the Niryo Ned2. Warning at 55°C, critical at 65°C.">?</span>
+      <!-- Saved Joint Positions — grows to fill -->
+      <div class="hmi-card hmi-savepos-card">
+        <div class="hmi-card-label">
+          SAVED JOINT POSITIONS
+          <span class="hmi-badge">{{ savedPositions.length }}</span>
         </div>
-        <div class="qc-temps-grid">
-          <div *ngFor="let temp of robotHealth!.hardware_status.temperatures; let i = index"
-               class="qc-temp-item"
-               [class.temp-ok]="temp < 55"
-               [class.temp-warn]="temp >= 55 && temp < 65"
-               [class.temp-critical]="temp >= 65">
-            <div class="qc-temp-name">{{ robotHealth!.hardware_status.motor_names[i] || 'Motor ' + i }}</div>
-            <div class="qc-temp-val">{{ temp }}°C</div>
+        <div class="hmi-sp-list">
+          <div class="hmi-sp-empty" *ngIf="savedPositions.length === 0 && !positionsLoading">
+            <mat-icon>bookmark_border</mat-icon> No positions saved yet
+          </div>
+          <div class="hmi-sp-loading" *ngIf="positionsLoading">
+            <mat-icon class="spin">sync</mat-icon> Loading…
+          </div>
+          <div class="hmi-sp-item" *ngFor="let pos of savedPositions"
+            [class.sp-open]="expandedPositionId === pos._id"
+            (click)="togglePositionExpand(pos._id)">
+            <div class="hmi-sp-row">
+              <div class="hmi-sp-left">
+                <mat-icon class="sp-icon">place</mat-icon>
+                <div>
+                  <div class="hmi-sp-name">{{ pos.name }}</div>
+                  <div class="hmi-sp-date">{{ pos.createdAt | date:'dd MMM · HH:mm' }}</div>
+                </div>
+              </div>
+              <div class="hmi-sp-right">
+                <mat-icon class="sp-chevron">{{ expandedPositionId === pos._id ? 'expand_less' : 'expand_more' }}</mat-icon>
+                <button class="hmi-sp-del" (click)="deleteSavedPosition(pos._id, $event)" matTooltip="Delete">
+                  <mat-icon>delete_outline</mat-icon>
+                </button>
+              </div>
+            </div>
+            <div class="hmi-sp-joints" *ngIf="expandedPositionId === pos._id">
+              <div class="hmi-sp-jcell" *ngFor="let j of pos.joints; let k = index">
+                <span class="hmi-sp-jlbl">{{ ['J1','J2','J3','J4','J5','J6'][k] }}</span>
+                <span class="hmi-sp-jdeg">{{ radToDeg(j) }}°</span>
+                <span class="hmi-sp-jrad">{{ j | number:'1.3-3' }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- INSPECTION HISTORY FULL ROW -->
-      <div class="qc-card qc-history-card">
-        <div class="qc-field-label">INSPECTION HISTORY
-          <span class="qc-tooltip-icon" matTooltip="Opens the full paginated history log with filters by date, product type, and result.">?</span>
-        </div>
-        <button class="qc-history-btn" routerLink="/admin/history">
-          <mat-icon>history</mat-icon>
-          View Full History
+      <!-- Reset Session -->
+      <button class="hmi-reset-btn" (click)="resetSession()">
+        <mat-icon>restart_alt</mat-icon>RESET SESSION
+      </button>
+
+    </div><!-- /hmi-col-right -->
+
+  </div><!-- /hmi-body -->
+
+  <!-- ══════════════════ DANGER ALERT BANNER ══════════════════ -->
+  <div class="hmi-danger-banner" *ngIf="dangerAlertActive">
+    <mat-icon class="hmi-danger-icon">error</mat-icon>
+    <div class="hmi-danger-text">
+      <strong>DANGER ALERT</strong>
+      <span>{{ dangerAlertMessage }}</span>
+    </div>
+    <button class="hmi-danger-dismiss" (click)="dismissDangerBanner()">
+      <mat-icon>close</mat-icon>
+    </button>
+  </div>
+
+  <!-- ══════════════════ ERROR LOGS / ALERTS SECTION ══════════════════ -->
+  <div class="hmi-error-section">
+
+    <div class="hmi-err-header" (click)="errorLogsExpanded = !errorLogsExpanded">
+      <mat-icon class="hmi-err-icon">bug_report</mat-icon>
+      <span class="hmi-err-title">ERROR LOGS &amp; ALERTS</span>
+      <span class="hmi-err-count" *ngIf="errorLogs.length > 0">{{ errorLogs.length }}</span>
+      <div class="hmi-err-actions" (click)="$event.stopPropagation()">
+        <button class="hmi-err-btn" (click)="toggleShowResolved()" [matTooltip]="showResolvedLogs ? 'Hide resolved' : 'Show resolved'">
+          <mat-icon>{{ showResolvedLogs ? 'visibility_off' : 'visibility' }}</mat-icon>
+          {{ showResolvedLogs ? 'Hide Resolved' : 'Show Resolved' }}
+        </button>
+        <button class="hmi-err-btn" (click)="loadErrorLogs()" matTooltip="Refresh logs">
+          <mat-icon>refresh</mat-icon>
         </button>
       </div>
+      <mat-icon class="hmi-err-chevron">{{ errorLogsExpanded ? 'expand_less' : 'expand_more' }}</mat-icon>
+    </div>
 
-    </div><!-- /right -->
-  </div><!-- /body -->
+    <div class="hmi-err-body" *ngIf="errorLogsExpanded">
+
+      <div class="hmi-err-loading" *ngIf="errorLogsLoading">
+        <mat-icon class="spin-icon">autorenew</mat-icon> Loading logs...
+      </div>
+
+      <div class="hmi-err-empty" *ngIf="!errorLogsLoading && errorLogs.length === 0">
+        <mat-icon>check_circle</mat-icon>
+        <span>No active alerts — system nominal</span>
+      </div>
+
+      <div class="hmi-err-list" *ngIf="!errorLogsLoading && errorLogs.length > 0">
+        <div *ngFor="let log of errorLogs" class="hmi-err-row" [ngClass]="severityColor(log.severity)"
+          [class.err-resolved]="log.resolved">
+          <div class="hmi-err-sev">
+            <mat-icon>
+              {{ log.severity === 'critical' ? 'dangerous' : log.severity === 'error' ? 'error' : 'warning' }}
+            </mat-icon>
+            <span>{{ log.severity | uppercase }}</span>
+          </div>
+          <div class="hmi-err-info">
+            <div class="hmi-err-type">{{ log.errorType }}</div>
+            <div class="hmi-err-msg">{{ log.message }}</div>
+            <div class="hmi-err-action" *ngIf="log.suggestedAction">
+              <mat-icon style="font-size:14px;width:14px;height:14px">tips_and_updates</mat-icon>
+              {{ log.suggestedAction }}
+            </div>
+          </div>
+          <div class="hmi-err-meta">
+            <span class="hmi-err-ts">{{ log.timestamp | date:'HH:mm:ss · dd MMM' }}</span>
+            <span class="hmi-err-status" *ngIf="log.resolved">
+              <mat-icon>check_circle</mat-icon> Resolved
+            </span>
+            <button class="hmi-err-ack-btn" *ngIf="!log.resolved"
+              (click)="acknowledgeLog(log)"
+              [disabled]="log.acknowledging"
+              matTooltip="Acknowledge — mark as resolved">
+              <mat-icon>done_all</mat-icon>
+              {{ log.acknowledging ? '...' : 'Acknowledge' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /hmi-err-body -->
+  </div><!-- /hmi-error-section -->
 
 </div>

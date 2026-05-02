@@ -12,23 +12,42 @@ export class ErrorInterceptor implements HttpInterceptor {
   private readonly silentUrls = ['/api/auth/login', '/api/auth/register', '/api/auth/reset-password'];
 
   intercept(request: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> {
-    return next.handle(request).pipe(
-      catchError((error: HttpErrorResponse) => {
-        const errorMsg = this.resolveMessage(error);
-        const isSilent = this.silentUrls.some(url => request.url.includes(url));
 
-        // Only show snackbar for non-auth routes — auth pages show their own messages
-        if (!isSilent) {
-          this.snackBar.open(errorMsg, 'Close', {
-            duration: 5000,
-            panelClass: ['error-snackbar']
-          });
-        }
+  // Get token
+  const token = localStorage.getItem('token');
 
-        return throwError(() => ({ ...error, resolvedMessage: errorMsg }));
-      })
-    );
+  // Clone request and attach token IF exists
+  let authRequest = request;
+
+  if (token) {
+    authRequest = request.clone({
+      setHeaders: {
+        Authorization: `Bearer ${token}`
+      }
+    });
   }
+
+  return next.handle(authRequest).pipe(
+    catchError((error: HttpErrorResponse) => {
+
+      const errorMsg = this.resolveMessage(error);
+      const isSilent = this.silentUrls.some(url => request.url.includes(url));
+
+      if (!isSilent) {
+        this.snackBar.open(errorMsg, 'Close', {
+          duration: 5000,
+          panelClass: ['error-snackbar']
+        });
+      }
+
+      return throwError(() => ({
+        ...error,
+        resolvedMessage: errorMsg
+      }));
+    })
+  );
+}
+
 
   private resolveMessage(error: HttpErrorResponse): string {
     // No connection

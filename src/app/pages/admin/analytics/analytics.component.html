@@ -40,11 +40,24 @@
     <span>Loading analytics...</span>
   </div>
 
+  <!-- ═══ ERROR ═══ -->
+  <div class="an-empty" *ngIf="!loading && errorMessage">
+    <mat-icon>cloud_off</mat-icon>
+    <h3>{{ errorMessage }}</h3>
+    <p>Check the backend connection and try again.</p>
+    <button class="an-retry-btn" (click)="fetchAnalytics()">
+      <mat-icon>refresh</mat-icon> Retry
+    </button>
+  </div>
+
   <!-- ═══ NO DATA ═══ -->
-  <div class="an-empty" *ngIf="!loading && !hasData">
+  <div class="an-empty" *ngIf="!loading && !errorMessage && !hasData">
     <mat-icon>analytics</mat-icon>
     <h3>No inspection data available</h3>
     <p>Analytics will populate once the AI inspection system begins recording results.</p>
+    <button class="an-retry-btn" (click)="fetchAnalytics()">
+      <mat-icon>refresh</mat-icon> Retry
+    </button>
   </div>
 
   <!-- ═══ CONTENT ═══ -->

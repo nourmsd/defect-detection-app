@@ -1,28 +1,154 @@
 const Inspection = require('../models/Inspection');
+const crypto = require('crypto');
+const { emitSocketEvent } = require('../utils/socketEvents');
+const { notifyRobotService } = require('./robotController');
+const { getSetting } = require('./systemController');
 
-exports.getHistory = async (req, res) => {
+/* =========================================================
+   NORMALIZATION
+========================================================= */
+function normalizeInspectionPayload(payload = {}) {
+  const {
+    label,
+    confidence,
+    device,
+    processing_time,
+    detected_date,
+    timestamp,
+  } = payload;
+
+  if (!label || confidence === undefined) {
+    const err = new Error('Missing required fields');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  let normalizedLabel = 'OK';
+  const labelLower = String(label).toLowerCase();
+
+  if (['defective', 'fail', 'nok'].includes(labelLower)) {
+    normalizedLabel = 'defective';
+  }
+
+  return {
+    normalizedLabel,
+    inspectionData: {
+      label: normalizedLabel,
+      confidence: Number(confidence) || 0,
+      device: device || 'Niryo Camera',
+      processing_time: Number(processing_time) || 0,
+      detected_date: detected_date || 'missing',
+      timestamp: timestamp ? new Date(timestamp) : null,
+    },
+  };
+}
+
+/* =========================================================
+   MAIN PIPELINE (REAL-TIME FIRST, DB AFTER)
+========================================================= */
+async function persistInspectionAndBroadcast(payload = {}, io, meta = {}) {
+  const { normalizedLabel, inspectionData } = normalizeInspectionPayload(payload);
+
+  const serverTimestamp = inspectionData.timestamp instanceof Date && !Number.isNaN(inspectionData.timestamp.valueOf())
+    ? inspectionData.timestamp
+    : new Date();
+
+  const eventPayload = {
+    id: crypto.randomUUID(),
+    label: normalizedLabel,
+    confidence: inspectionData.confidence,
+    processing_time: inspectionData.processing_time,
+    detected_date: inspectionData.detected_date,
+    timestamp: serverTimestamp.toISOString(),
+  };
+
+  emitSocketEvent(io, 'inspection', eventPayload);
+
+  setImmediate(async () => {
+    try {
+      await Inspection.create({
+        ...inspectionData,
+        timestamp: serverTimestamp,
+      });
+    } catch (err) {
+      console.error('[DB ERROR]', err);
+    }
+  });
+
+  return {
+    ...eventPayload,
+    device: inspectionData.device,
+    transport: meta.transport || 'socket',
+  };
+}
+
+/* =========================================================
+   ROBOT ALERT SYSTEM (NEW FIX)
+========================================================= */
+function sendRobotAlert(io, level, message) {
+  emitSocketEvent(io, 'robot_alert', {
+    level,
+    message,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+/* =========================================================
+   LOG INSPECTION (HTTP ENTRYPOINT)
+========================================================= */
+async function logInspection(req, res) {
+  try {
+    const result = await persistInspectionAndBroadcast(
+      req.body,
+      req.io,
+      { transport: 'http' }
+    );
+
+    // Notify robot arm about defective items (fire-and-forget)
+    notifyRobotService(result).catch(() => {});
+
+    res.status(201).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({
+      success: false,
+      message: err.message || 'Error logging inspection',
+    });
+  }
+}
+
+/* =========================================================
+   HISTORY
+========================================================= */
+async function getHistory(req, res) {
   try {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const skip = (page - 1) * limit;
 
-    // Build filter
     const filter = {};
+
     if (req.query.result === 'pass') filter.label = 'OK';
-    else if (req.query.result === 'fail') filter.label = 'defective';
+    if (req.query.result === 'fail') filter.label = 'defective';
 
-    if (req.query.minConfidence) {
-      filter.confidence = { ...filter.confidence, $gte: parseFloat(req.query.minConfidence) };
-    }
-    if (req.query.maxConfidence) {
-      filter.confidence = { ...filter.confidence, $lte: parseFloat(req.query.maxConfidence) };
+    // Confidence may be stored as 0-1 decimal or 0-100 percent depending on AI pipeline.
+    // Frontend always sends percent (0-100). Normalize at query time via $expr.
+    if (req.query.minConfidence || req.query.maxConfidence) {
+      const normalizedConf = {
+        $cond: [{ $gt: ['$confidence', 1] }, '$confidence', { $multiply: ['$confidence', 100] }],
+      };
+      const exprs = [];
+      if (req.query.minConfidence) exprs.push({ $gte: [normalizedConf, parseFloat(req.query.minConfidence)] });
+      if (req.query.maxConfidence) exprs.push({ $lte: [normalizedConf, parseFloat(req.query.maxConfidence)] });
+      filter.$expr = exprs.length === 1 ? exprs[0] : { $and: exprs };
     }
 
-    if (req.query.dateFrom) {
-      filter.timestamp = { ...filter.timestamp, $gte: new Date(req.query.dateFrom) };
-    }
-    if (req.query.dateTo) {
-      filter.timestamp = { ...filter.timestamp, $lte: new Date(req.query.dateTo) };
+    if (req.query.dateFrom || req.query.dateTo) {
+      filter.timestamp = {};
+      if (req.query.dateFrom) filter.timestamp.$gte = new Date(req.query.dateFrom);
+      if (req.query.dateTo) filter.timestamp.$lte = new Date(req.query.dateTo);
     }
 
     if (req.query.search) {
@@ -31,263 +157,209 @@ exports.getHistory = async (req, res) => {
 
     const [history, total] = await Promise.all([
       Inspection.find(filter).sort({ timestamp: -1 }).skip(skip).limit(limit),
-      Inspection.countDocuments(filter)
+      Inspection.countDocuments(filter),
     ]);
 
-    const mapped = history.map(h => ({
-      id: h._id,
-      label: h.label,
-      confidence: h.confidence,
-      timestamp: h.timestamp,
-      device: h.device,
-      processing_time: h.processing_time
-    }));
-
     res.json({
-      data: mapped,
+      data: history,
       pagination: {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit)
-      }
+        totalPages: Math.ceil(total / limit),
+      },
     });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Error fetching history' });
   }
-};
+}
 
-exports.getAdminStats = async (req, res) => {
+/* =========================================================
+   STATS  — rolling 24 h window (reset at midnight each day)
+   Efficiency = (totalInspected / dailyTarget) × 100  (Feature 3)
+========================================================= */
+async function getAdminStats(req, res) {
   try {
-    const [total, defective] = await Promise.all([
-      Inspection.countDocuments(),
-      Inspection.countDocuments({ label: 'defective' })
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const filter = { timestamp: { $gte: startOfDay } };
+
+    const [total, defective, dailyTarget] = await Promise.all([
+      Inspection.countDocuments(filter),
+      Inspection.countDocuments({ ...filter, label: 'defective' }),
+      getSetting('daily_target', 450),
     ]);
-    const efficiency = total > 0 ? (((total - defective) / total) * 100).toFixed(1) : 100;
+
+    const target = Number(dailyTarget) || 450;
+    const efficiency = total > 0 ? Math.min(100, (total / target) * 100) : 0;
 
     res.json({
       totalInspected: total,
-      defective: defective,
-      efficiency: Number(efficiency)
+      defective,
+      efficiency: Number(efficiency.toFixed(1)),
+      dailyTarget: target,
     });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Error fetching stats' });
   }
-};
+}
 
-// Analytics aggregation endpoint
-exports.getAnalytics = async (req, res) => {
+/* =========================================================
+   ANALYTICS
+========================================================= */
+async function getAnalytics(req, res) {
   try {
     const range = req.query.range || '30d';
-    let dateFrom;
     const now = new Date();
 
-    switch (range) {
-      case '7d': dateFrom = new Date(now - 7 * 86400000); break;
-      case '30d': dateFrom = new Date(now - 30 * 86400000); break;
-      case '90d': dateFrom = new Date(now - 90 * 86400000); break;
-      default: dateFrom = null; // all time
-    }
+    let dateFrom = null;
+    if (range === '7d') dateFrom = new Date(now - 7 * 86400000);
+    else if (range === '30d') dateFrom = new Date(now - 30 * 86400000);
+    else if (range === '90d') dateFrom = new Date(now - 90 * 86400000);
+    // 'all' → dateFrom stays null → match = {} (full collection scan)
 
-    const matchStage = dateFrom ? { timestamp: { $gte: dateFrom } } : {};
+    const match = dateFrom ? { timestamp: { $gte: dateFrom } } : {};
 
-        // Run all aggregations in parallel — single pass aggregation for KPIs + daily trend
-    const [
-      mainAgg,
-      dailyTrend,
-      confidenceDistribution,
-      defectTypeBreakdown,
-      recentInspection
-    ] = await Promise.all([
-      // One aggregation to get total, defective, avg confidence
+    const [mainAgg, dailyTrend, confidenceDistribution, defectTypeBreakdown] = await Promise.all([
       Inspection.aggregate([
-        { $match: matchStage },
+        { $match: match },
         {
           $group: {
             _id: null,
             total: { $sum: 1 },
             defective: { $sum: { $cond: [{ $eq: ['$label', 'defective'] }, 1, 0] } },
-            avgConf: { $avg: '$confidence' }
-          }
-        }
+            avgConf: { $avg: '$confidence' },
+          },
+        },
       ]),
+
       Inspection.aggregate([
-        { $match: matchStage },
+        { $match: match },
         {
           $group: {
             _id: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
             total: { $sum: 1 },
-            passed: { $sum: { $cond: [{ $eq: ['$label', 'OK'] }, 1, 0] } },
-            failed: { $sum: { $cond: [{ $ne: ['$label', 'OK'] }, 1, 0] } }
-          }
+            defective: { $sum: { $cond: [{ $eq: ['$label', 'defective'] }, 1, 0] } },
+          },
         },
-        { $sort: { _id: 1 } }
+        { $sort: { _id: 1 } },
       ]),
+
+      // Confidence score distribution in 10 buckets (0-10, 10-20 … 90-100)
       Inspection.aggregate([
-        { $match: matchStage },
+        { $match: match },
         {
-          $bucket: {
-            groupBy: '$confidence',
-            boundaries: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 101],
-            default: 'Other',
-            output: { count: { $sum: 1 } }
-          }
-        }
+          $addFields: {
+            confPct: {
+              $cond: [
+                { $gt: ['$confidence', 1] },
+                '$confidence',
+                { $multiply: ['$confidence', 100] },
+              ],
+            },
+          },
+        },
+        {
+          $group: {
+            _id: { $floor: { $divide: ['$confPct', 10] } },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
       ]),
+
+      // Defect breakdown by source device (only defective)
       Inspection.aggregate([
-        { $match: { ...matchStage, label: 'defective' } },
-        { $group: { _id: '$device', count: { $sum: 1 } } },
-        { $sort: { count: -1 } }
+        { $match: { ...match, label: 'defective' } },
+        {
+          $group: {
+            _id: { $ifNull: ['$device', 'Unknown'] },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { count: -1 } },
+        { $limit: 10 },
       ]),
-      Inspection.findOne(matchStage).sort({ timestamp: -1 })
     ]);
 
-    const totalDocs = mainAgg[0]?.total || 0;
-    const defectiveDocs = mainAgg[0]?.defective || 0;
-    const avgConfidenceResult = mainAgg[0]?.avgConf || 0;
-
-    const passRate = totalDocs > 0 ? ((totalDocs - defectiveDocs) / totalDocs * 100) : 0;
-    const avgConfidence = avgConfidenceResult <= 1 ? avgConfidenceResult * 100 : avgConfidenceResult;
-
-    // Previous period for trend comparison
-    let prevTotal = 0, prevDefective = 0, prevAvgConf = 0;
-    if (dateFrom) {
-      const periodMs = now - dateFrom;
-      const prevFrom = new Date(dateFrom - periodMs);
-      const prevMatch = { timestamp: { $gte: prevFrom, $lt: dateFrom } };
-      const [prevAgg] = await Promise.all([
-        Inspection.aggregate([
-          { $match: prevMatch },
-          {
-            $group: {
-              _id: null,
-              total: { $sum: 1 },
-              defective: { $sum: { $cond: [{ $eq: ['$label', 'defective'] }, 1, 0] } },
-              avgConf: { $avg: '$confidence' }
-            }
-          }
-        ])
-      ]);
-      prevTotal = prevAgg[0]?.total || 0;
-      prevDefective = prevAgg[0]?.defective || 0;
-      const rawPrevConf = prevAgg[0]?.avgConf || 0;
-      prevAvgConf = rawPrevConf <= 1 ? rawPrevConf * 100 : rawPrevConf;
-    }
+    const total = mainAgg[0]?.total || 0;
+    const defective = mainAgg[0]?.defective || 0;
+    const avgConf = mainAgg[0]?.avgConf || 0;
 
     res.json({
       kpis: {
-        totalInspections: totalDocs,
-        passRate: Math.round(passRate * 10) / 10,
-        avgConfidence: Math.round(avgConfidence * 10) / 10,
-        defective: defectiveDocs,
-        trends: {
-          totalChange: prevTotal > 0 ? Math.round((totalDocs - prevTotal) / prevTotal * 100) : null,
-          passRateChange: prevTotal > 0
-            ? Math.round(((totalDocs - defectiveDocs) / totalDocs * 100 - (prevTotal - prevDefective) / prevTotal * 100) * 10) / 10
-            : null,
-          confidenceChange: prevAvgConf > 0
-            ? Math.round((avgConfidence - prevAvgConf) * 10) / 10
-            : null
-        }
+        totalInspections: total,
+        defective,
+        passRate: total ? ((total - defective) / total) * 100 : 0,
+        avgConfidence: avgConf > 1 ? avgConf : avgConf * 100,
       },
       dailyTrend,
       confidenceDistribution,
       defectTypeBreakdown,
-      lastInspection: recentInspection ? {
-        id: recentInspection._id,
-        label: recentInspection.label,
-        confidence: recentInspection.confidence,
-        timestamp: recentInspection.timestamp,
-        device: recentInspection.device
-      } : null
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Error fetching analytics' });
+    console.error('[Analytics] Error:', err.message, err.stack);
+    res.status(500).json({ message: 'Error fetching analytics', detail: err.message });
   }
-};
+}
 
-exports.getWorkerDashboardData = async (req, res) => {
+/* =========================================================
+   WORKER DASHBOARD  — defaults to rolling 24 h (since midnight)
+========================================================= */
+async function getWorkerDashboardData(req, res) {
   try {
-    const [recent, totalInspected, defectiveCount] = await Promise.all([
-      Inspection.find().sort({ timestamp: -1 }).limit(50),
-      Inspection.countDocuments(),
-      Inspection.countDocuments({ label: 'defective' })
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const filter = req.query.since
+      ? { timestamp: { $gte: new Date(req.query.since) } }
+      : { timestamp: { $gte: startOfDay } };
+
+    const [recent, total, defective] = await Promise.all([
+      Inspection.find(filter).sort({ timestamp: -1 }).limit(50),
+      Inspection.countDocuments(filter),
+      Inspection.countDocuments({ ...filter, label: 'defective' }),
     ]);
-    const mapped = recent.map(h => ({
-      id: h._id,
-      label: h.label,
-      confidence: h.confidence,
-      timestamp: h.timestamp,
-      processing_time: h.processing_time
-    }));
-    const conformingCount = totalInspected - defectiveCount;
+
     res.json({
       gauges: {
-        totalInspected,
-        defective: defectiveCount,
-        conforming: conformingCount
+        totalInspected: total,
+        defective,
+        conforming: total - defective,
       },
-      history: mapped
-    })
+      history: recent,
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Error fetching worker dashboard' });
+    res.status(500).json({ message: 'Worker dashboard error' });
   }
-};
+}
 
-exports.cleanTestData = async (req, res) => {
+/* =========================================================
+   CLEAN DATA
+========================================================= */
+async function cleanTestData(req, res) {
   try {
     const result = await Inspection.deleteMany({});
-    console.log(`[Admin] Cleared ${result.deletedCount} inspection records`);
-    res.json({ success: true, deleted: result.deletedCount, message: `Deleted ${result.deletedCount} inspection records` });
+    res.json({ success: true, deleted: result.deletedCount });
   } catch (err) {
-    console.error('Error cleaning inspection data:', err);
-    res.status(500).json({ success: false, message: 'Error cleaning inspection data' });
+    console.error(err);
+    res.status(500).json({ message: 'Error cleaning data' });
   }
-};
+}
 
-exports.logInspection = async (req, res) => {
-  try {
-    const { label, confidence, device, processing_time } = req.body;
-    
-    if (!label || confidence === undefined) {
-      return res.status(400).json({ success: false, message: 'Missing required fields' });
-    }
-
-    // Accept label formats commonly used
-    let normalizedLabel = 'OK';
-    if (label.toLowerCase() === 'defective' || label.toLowerCase() === 'fail' || label.toLowerCase() === 'nok') {
-      normalizedLabel = 'defective';
-    }
-
-    const inspection = new Inspection({
-      label: normalizedLabel,
-      confidence: Number(confidence),
-      device: device || 'Camera 1',
-      processing_time: Number(processing_time) || 0
-    });
-
-    await inspection.save();
-
-    // Emit live event to all connected clients
-    if (req.io) {
-      req.io.emit('inspectionAlert', {
-        id: inspection._id,
-        type: normalizedLabel === 'OK' ? 'NORMAL' : 'defective',
-        message: normalizedLabel === 'OK' ? 'Conforming product detected' : 'Defective product detected',
-        confidence: inspection.confidence,
-        processing_time: inspection.processing_time,
-        device: inspection.device,
-        timestamp: inspection.timestamp
-      });
-    }
-
-    res.status(201).json({ success: true, data: inspection });
-  } catch (err) {
-    console.error('Error logging inspection:', err);
-    res.status(500).json({ success: false, message: 'Error logging inspection' });
-  }
+/* =========================================================
+   EXPORTS
+========================================================= */
+module.exports = {
+  persistInspectionAndBroadcast,
+  logInspection,
+  getHistory,
+  getAdminStats,
+  getAnalytics,
+  getWorkerDashboardData,
+  cleanTestData,
+  sendRobotAlert,
 };

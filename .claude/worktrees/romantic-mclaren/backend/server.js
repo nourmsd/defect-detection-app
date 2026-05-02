@@ -81,15 +81,15 @@ mongoose.connect(MONGO_URI, {
 
     // Seed Fixed Admin
     const User = require('./models/User');
-    const fixedAdminEmail = 'nourmessaoudi54@gmail.com';
+    const fixedAdminEmail = 'bghassen239@gmail.com';
     const existingAdmin = await User.findOne({ email: fixedAdminEmail });
 
     if (!existingAdmin) {
       console.log(`[Seed] Creating fixed admin: ${fixedAdminEmail}`);
       const admin = new User({
-        username: 'nourmessaoudi',
+        username: 'bghassen',
         email: fixedAdminEmail,
-        password: 'AdminIndustry2025',
+        password: 'Admin2025',
         role: 'admin',
         status: 'approved'
       });
