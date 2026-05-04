@@ -66,24 +66,24 @@ POLL_INTERVAL_S      = 0.5  # how often the worker checks the action queue
 # ── 1. HOME ─────────────────────────────────────────────────────────
 #  Safe rest position — robot folds away from the conveyor
 HOME_JOINTS = [
-    0.0,    # joint_1  ← TODO set manually
-    0.5,    # joint_2  ← TODO set manually
-   -1.25,   # joint_3  ← TODO set manually
-    0.0,    # joint_4  ← TODO set manually
-   -0.5,    # joint_5  ← TODO set manually
-    0.0,    # joint_6  ← TODO set manually
+    0.09,    # joint_1  ← TODO set manually
+    0.61,    # joint_2  ← TODO set manually
+   -1.34,   # joint_3  ← TODO set manually
+    0.09,    # joint_4  ← TODO set manually
+   -0.08,    # joint_5  ← TODO set manually
+    0.08,    # joint_6  ← TODO set manually
 ]
 
 # ── 2. READING ───────────────────────────────────────────────────────
 #  Gripper positioned ON the product sitting on the conveyor inspection
 #  zone — robot is ready to either pick (defective) or release (OK)
 READING_JOINTS = [
-    0.0,    # joint_1  ← TODO set manually
-    0.0,    # joint_2  ← TODO set manually
-    0.0,    # joint_3  ← TODO set manually
-    0.0,    # joint_4  ← TODO set manually
-    0.0,    # joint_5  ← TODO set manually
-    0.0,    # joint_6  ← TODO set manually
+    0.20,    # joint_1  ← TODO set manually
+    -0.42,    # joint_2  ← TODO set manually
+    -0.73,    # joint_3  ← TODO set manually
+    0.16,    # joint_4  ← TODO set manually
+    -0.50,    # joint_5  ← TODO set manually
+    0.19,    # joint_6  ← TODO set manually
 ]
 
 # ── 3. PATH_POINT ────────────────────────────────────────────────────
@@ -91,24 +91,24 @@ READING_JOINTS = [
 #  Must be high enough to clear the conveyor frame and any obstacles.
 #  The robot passes through this point in BOTH directions.
 PATH_JOINTS = [
-    0.0,    # joint_1  ← TODO set manually
-    0.0,    # joint_2  ← TODO set manually
-    0.0,    # joint_3  ← TODO set manually
-    0.0,    # joint_4  ← TODO set manually
-    0.0,    # joint_5  ← TODO set manually
-    0.0,    # joint_6  ← TODO set manually
+    1.12,    # joint_1  ← TODO set manually
+    0.03,    # joint_2  ← TODO set manually
+    -0.75,    # joint_3  ← TODO set manually
+    -0.14,    # joint_4  ← TODO set manually
+    -0.29,    # joint_5  ← TODO set manually
+    0.19,    # joint_6  ← TODO set manually
 ]
 
 # ── 4. ABOVE_BIN ─────────────────────────────────────────────────────
 #  Directly above the reject bin, gripper pointing downward.
 #  Robot will release (open gripper) while in this position.
 ABOVE_BIN_JOINTS = [
-    0.0,    # joint_1  ← TODO set manually
-    0.0,    # joint_2  ← TODO set manually
-    0.0,    # joint_3  ← TODO set manually
-    0.0,    # joint_4  ← TODO set manually
-    0.0,    # joint_5  ← TODO set manually
-    0.0,    # joint_6  ← TODO set manually
+    1.74,    # joint_1  ← TODO set manually
+    -0.52,    # joint_2  ← TODO set manually
+    -0.06,    # joint_3  ← TODO set manually
+    -0.13,    # joint_4  ← TODO set manually
+    -0.74,    # joint_5  ← TODO set manually
+    0.19,    # joint_6  ← TODO set manually
 ]
 
 
@@ -147,7 +147,7 @@ def connect_robot():
     global _robot, _robot_ok
 
     try:
-        from pyniryo2 import NiryoRobot
+        from pyniryo import NiryoRobot
         log.info(f"Connecting to Niryo robot at {ROBOT_IP} …")
         robot = NiryoRobot(ROBOT_IP)
         log.info("Robot TCP connected ✔")

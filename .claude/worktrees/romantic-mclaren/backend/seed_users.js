@@ -21,20 +21,6 @@ async function seedUsers() {
     // Clear existing users to avoid conflicts (Optional, but safer for this debugging task)
     // await User.deleteMany({});
 
-    const usersToSeed = [
-      {
-        username: 'admin',
-        email: 'admin@industry.com',
-        password: 'AdminIndustry2025',
-        role: 'admin'
-      },
-      {
-        username: 'worker',
-        email: 'worker@industry.com',
-        password: 'worker2025',
-        role: 'worker'
-      }
-    ];
 
     for (const u of usersToSeed) {
       const salt = await bcrypt.genSalt(10);
