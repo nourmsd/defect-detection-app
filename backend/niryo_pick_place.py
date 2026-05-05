@@ -33,6 +33,7 @@ import time
 import logging
 import threading
 import queue as queue_module
+import urllib.request
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
@@ -43,6 +44,7 @@ from flask_cors import CORS
 ROBOT_IP             = "10.10.10.10"   # Niryo default hotspot IP
 ROBOT_SERVICE_PORT   = 5002            # this script's HTTP port
 BACKEND_URL          = "http://127.0.0.1:5000"  # Node.js backend
+STREAM_SERVICE_URL   = "http://127.0.0.1:5001"
 
 CONNECT_TIMEOUT_S    = 10   # seconds to wait for robot TCP connection
 MOVE_SPEED           = 25   # joint speed percentage (1-100), keep low for safety
@@ -136,52 +138,196 @@ _robot_busy        = False         # True while executing a pick-place cycle
 _last_action       = "idle"        # last executed action string
 _action_queue      = queue_module.Queue(maxsize=20)
 _freemotion_active = False         # True when arm is in learning/free mode
+_recovery_in_progress = False      # True while a reconnect/calibration is running
+_robot_session_mode = "standby"    # standby | connecting | active
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ROBOT CONNECTION
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-def connect_robot():
-    """Connect to Niryo robot via pyniryo2 and update shared state."""
-    global _robot, _robot_ok
+def ensure_robot_ready():
+    """
+    Best-effort self-heal:
+    if robot is not ready, try reconnect + startup calibration sequence once.
+    """
+    global _recovery_in_progress
+    with _state_lock:
+        if _robot_ok and _robot is not None:
+            return True
+        if _recovery_in_progress:
+            wait_for_existing_recovery = True
+        else:
+            _recovery_in_progress = True
+            wait_for_existing_recovery = False
+
+    if wait_for_existing_recovery:
+        # Another request is already reconnecting/calibrating; wait for it.
+        deadline = time.time() + CONNECT_TIMEOUT_S + 20
+        while time.time() < deadline:
+            with _state_lock:
+                if _robot_ok and _robot is not None:
+                    return True
+                if not _recovery_in_progress:
+                    break
+            time.sleep(0.25)
+        with _state_lock:
+            return _robot_ok and _robot is not None
 
     try:
+        log.warning("Robot not ready — attempting automatic recovery")
+        connect_robot()
+    except Exception as exc:
+        log.error(f"Automatic recovery failed: {exc}")
+    finally:
+        with _state_lock:
+            _recovery_in_progress = False
+
+    with _state_lock:
+        return _robot_ok and _robot is not None
+
+def connect_robot():
+    """Connect to Niryo robot via pyniryo2 and update shared state."""
+    global _robot, _robot_ok, _robot_session_mode
+
+    try:
+        with _state_lock:
+            _robot_session_mode = "connecting"
+        _set_stream_camera_paused(True)
         from pyniryo import NiryoRobot
         log.info(f"Connecting to Niryo robot at {ROBOT_IP} …")
         robot = NiryoRobot(ROBOT_IP)
         log.info("Robot TCP connected ✔")
 
+        arm = getattr(robot, "arm", robot)  # SDK compatibility (some versions expose arm.*)
+
         log.info("Calibrating …")
-        robot.arm.calibrate_auto()
+        _call_first_available(arm, ["calibrate_auto", "calibrate"])
         log.info("Calibration done ✔")
 
-        robot.arm.set_arm_max_velocity(MOVE_SPEED)
-        robot.tool.update_tool()
-        log.info(f"Tool detected: {robot.tool.tool}")
+        _call_first_available(arm, ["set_arm_max_velocity", "set_max_velocity"], MOVE_SPEED)
+
+        tool = getattr(robot, "tool", None)
+        if tool is not None:
+            try:
+                _call_first_available(tool, ["update_tool", "refresh_tool"])
+                log.info(f"Tool detected: {getattr(tool, 'tool', 'unknown')}")
+            except Exception as tool_exc:
+                log.warning(f"Tool init warning: {tool_exc}")
 
         with _state_lock:
             _robot   = robot
             _robot_ok = True
+            _robot_session_mode = "active"
 
-        log.info("Moving to HOME position …")
+        log.info("Startup sequence: auto-calibrated, moving to HOME position …")
         safe_move(HOME_JOINTS, label="HOME")
-        log.info("Robot ready — moving to READING position")
+        log.info("Moving from HOME to READING position …")
         safe_move(READING_JOINTS, label="READING")
+        close_gripper()
+        log.info("Gripper set to CLOSED at startup")
+        log.info("Robot ready at READING position")
 
     except Exception as exc:
         log.error(f"Robot connection failed: {exc}")
         with _state_lock:
             _robot    = None
             _robot_ok = False
+            _robot_session_mode = "standby"
+        _set_stream_camera_paused(False)
         raise
+
+
+def release_robot_connection(reason="standby"):
+    """Release the exclusive Niryo TCP client so the stream can reconnect."""
+    global _robot, _robot_ok, _freemotion_active, _robot_session_mode
+
+    with _state_lock:
+        robot = _robot
+        _robot = None
+        _robot_ok = False
+        _freemotion_active = False
+        _robot_session_mode = "standby"
+
+    if robot is not None:
+        try:
+            close_fn = getattr(robot, "close_connection", None)
+            if callable(close_fn):
+                close_fn()
+                log.info(f"Released robot connection â€” {reason}")
+        except Exception as exc:
+            log.warning(f"Robot disconnect warning: {exc}")
+
+    _set_stream_camera_paused(False)
 
 
 def safe_move(joints, label="?"):
     """Move to joint positions; logs and re-raises on failure."""
     log.info(f"→ Moving to {label}: {[round(j, 3) for j in joints]}")
-    _robot.arm.move_joints(joints)
+    arm = getattr(_robot, "arm", _robot)  # SDK compatibility
+    _call_first_available(arm, ["move_joints"], joints)
     log.info(f"  {label} reached ✔")
+
+
+def close_gripper():
+    """Close gripper on the current tool."""
+    tool = getattr(_robot, "tool", None)
+    candidates = [tool, _robot]
+    method_names = ["grasp_with_tool", "close_gripper", "gripper_close", "grasp", "close"]
+
+    last_exc = None
+    for target in candidates:
+        if target is None:
+            continue
+        for name in method_names:
+            fn = getattr(target, name, None)
+            if not callable(fn):
+                continue
+            try:
+                # Some SDKs require a speed argument, others don't.
+                return fn(GRIPPER_SPEED)
+            except TypeError as exc:
+                try:
+                    return fn()
+                except Exception as exc2:
+                    last_exc = exc2
+            except Exception as exc:
+                last_exc = exc
+
+    raise AttributeError(
+        f"Gripper close method not available (tried {method_names})"
+        + (f": {last_exc}" if last_exc else "")
+    )
+
+
+def open_gripper():
+    """Open gripper on the current tool."""
+    tool = getattr(_robot, "tool", None)
+    candidates = [tool, _robot]
+    method_names = ["release_with_tool", "open_gripper", "gripper_open", "release", "open"]
+
+    last_exc = None
+    for target in candidates:
+        if target is None:
+            continue
+        for name in method_names:
+            fn = getattr(target, name, None)
+            if not callable(fn):
+                continue
+            try:
+                return fn(GRIPPER_SPEED)
+            except TypeError as exc:
+                try:
+                    return fn()
+                except Exception as exc2:
+                    last_exc = exc2
+            except Exception as exc:
+                last_exc = exc
+
+    raise AttributeError(
+        f"Gripper open method not available (tried {method_names})"
+        + (f": {last_exc}" if last_exc else "")
+    )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -198,8 +344,13 @@ def execute_pick_and_place(item_id, confidence):
     """
     global _robot_busy, _last_action
 
+    if not ensure_robot_ready():
+        log.warning(f"Skipping pick for item {item_id} â€” robot not ready")
+        _notify_backend_action(item_id, "pick_error", "robot_not_ready")
+        return
+
     with _state_lock:
-        if not _robot_ok or _robot is None:
+        if False and (not _robot_ok or _robot is None):
             log.warning(f"Skipping pick for item {item_id} — robot not ready")
             return
         _robot_busy  = True
@@ -209,8 +360,11 @@ def execute_pick_and_place(item_id, confidence):
         log.info(f"━━━ PICK & PLACE  item={item_id}  conf={confidence:.1%} ━━━")
 
         # ── PICK ────────────────────────────────────────────────────
+        log.info("Opening gripper for pickup …")
+        open_gripper()
+        time.sleep(0.2)
         log.info("Grasping item …")
-        _robot.tool.grasp_with_tool()
+        close_gripper()
         time.sleep(GRIPPER_HOLD_MS / 1000.0)
         log.info("Item grasped ✔")
 
@@ -222,8 +376,11 @@ def execute_pick_and_place(item_id, confidence):
 
         # ── RELEASE ─────────────────────────────────────────────────
         log.info("Releasing item into bin …")
-        _robot.tool.release_with_tool()
+        open_gripper()
         time.sleep(GRIPPER_RELEASE_MS / 1000.0)
+        log.info("Closing gripper after release …")
+        close_gripper()
+        time.sleep(0.2)
         log.info("Item released ✔")
 
         # ── ABOVE_BIN → PATH_POINT ──────────────────────────────────
@@ -240,7 +397,8 @@ def execute_pick_and_place(item_id, confidence):
         _notify_backend_action(item_id, "pick_error", str(exc))
         # Attempt to recover to reading position
         try:
-            _robot.tool.release_with_tool()
+            open_gripper()
+            close_gripper()
             safe_move(READING_JOINTS, label="READING (recovery)")
         except Exception as rec_exc:
             log.error(f"Recovery move failed: {rec_exc}")
@@ -249,6 +407,7 @@ def execute_pick_and_place(item_id, confidence):
         with _state_lock:
             _robot_busy  = False
             _last_action = "idle"
+        release_robot_connection("pick-place cycle complete")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -300,11 +459,12 @@ def receive_inspection_result():
 
     if label == "defective":
         with _state_lock:
-            robot_ready = _robot_ok
+            robot_ready = True
 
-        if not robot_ready:
-            log.warning("Robot not ready — defective item cannot be picked")
-            return jsonify({"queued": False, "reason": "robot_not_ready"}), 503
+        if False and not robot_ready:
+            if not ensure_robot_ready():
+                log.warning("Robot not ready — defective item cannot be picked")
+                return jsonify({"queued": False, "reason": "robot_not_ready"}), 503
 
         try:
             _action_queue.put_nowait({"id": item_id, "confidence": confidence})
@@ -358,31 +518,261 @@ def get_current_joints():
         if not _robot_ok or _robot is None:
             return jsonify({"error": "robot_not_ready"}), 503
         try:
-            joints = list(_robot.arm.get_joints())
+            arm = getattr(_robot, "arm", _robot)  # SDK compatibility
+            joints = list(_call_first_available(arm, ["get_joints"]))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
     log.info(f"Current joints read: {[round(j, 4) for j in joints]}")
     return jsonify({"joints": joints})
 
 
+def _call_first_available(target, method_names, *args, **kwargs):
+    """
+    Try a list of API method names and call the first one found.
+    This shields us from minor pyniryo API naming differences.
+    """
+    for name in method_names:
+        fn = getattr(target, name, None)
+        if callable(fn):
+            return fn(*args, **kwargs)
+    raise AttributeError(f"None of methods {method_names} are available on {type(target).__name__}")
+
+
+def _set_stream_camera_paused(paused: bool) -> bool:
+    endpoint = "/camera/pause" if paused else "/camera/resume"
+    action = "pause" if paused else "resume"
+    try:
+        req = urllib.request.Request(
+            f"{STREAM_SERVICE_URL}{endpoint}",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return 200 <= resp.status < 300
+    except Exception as exc:
+        log.warning(f"Unable to {action} stream camera: {exc}")
+        return False
+
+
+def _stream_robot_connected() -> bool:
+    try:
+        with urllib.request.urlopen(f"{STREAM_SERVICE_URL}/robot-health", timeout=2) as resp:
+            import json
+            data = json.loads(resp.read().decode("utf-8"))
+            return bool(data.get("robot_connected"))
+    except Exception:
+        return False
+
+
+def _hardware_status_to_dict(hw):
+    """Best-effort conversion of pyniryo hardware status object to dict."""
+    if hw is None:
+        return {}
+    if isinstance(hw, dict):
+        return hw
+    if hasattr(hw, "__dict__"):
+        return {k: v for k, v in vars(hw).items() if not k.startswith("_")}
+    return {}
+
+
+def _collect_robot_diagnostics():
+    """
+    Collect diagnostics aligned with Niryo SDK semantics.
+    Returns: (need_calib: bool, hardware_status: dict, alerts: list[dict])
+    """
+    need_calib = False
+    hardware_status = {}
+    alerts = []
+
+    with _state_lock:
+        robot = _robot
+        robot_ok = _robot_ok
+        session_mode = _robot_session_mode
+
+    if not robot_ok or robot is None:
+        if session_mode == "standby" and _stream_robot_connected():
+            hardware_status = {"session_mode": "standby"}
+            return need_calib, hardware_status, alerts
+        alerts.append({"level": "error", "code": "robot_not_ready", "message": "Robot not ready"})
+        return need_calib, hardware_status, alerts
+
+    try:
+        need_calib = bool(_call_first_available(robot, ["need_calibration"]))
+        if need_calib:
+            alerts.append({"level": "warning", "code": "needs_calibration", "message": "Robot requires calibration"})
+    except Exception as exc:
+        alerts.append({"level": "warning", "code": "need_calibration_check_failed", "message": str(exc)})
+
+    try:
+        raw_hw = _call_first_available(robot, ["get_hardware_status"])
+        hardware_status = _hardware_status_to_dict(raw_hw)
+    except Exception as exc:
+        alerts.append({"level": "warning", "code": "hardware_status_unavailable", "message": str(exc)})
+
+    # Surface common error fields if present (similar spirit to Studio diagnostics).
+    for key in ["error_message", "hardware_errors_message", "rpi_temperature", "connection_up"]:
+        if key in hardware_status and hardware_status.get(key):
+            val = hardware_status.get(key)
+            if key in ["error_message", "hardware_errors_message"]:
+                alerts.append({"level": "error", "code": key, "message": str(val)})
+            else:
+                alerts.append({"level": "info", "code": key, "message": f"{key}: {val}"})
+
+    return need_calib, hardware_status, alerts
+
+
+@app.route("/reboot-tool", methods=["POST"])
+def reboot_tool():
+    """Reboot/reinitialize the end-effector tool (gripper)."""
+    global _last_action
+    if not ensure_robot_ready():
+        return jsonify({"message": "robot_not_ready"}), 503
+    with _state_lock:
+        if _robot_busy:
+            return jsonify({"message": "robot_busy"}), 409
+        try:
+            _last_action = "reboot_tool"
+            # Niryo-studio equivalent: reboot the tool bus then refresh tool.
+            _call_first_available(_robot, ["tool_reboot"])
+            _call_first_available(_robot.tool, ["update_tool", "refresh_tool"])
+            tool_name = getattr(_robot.tool, "tool", "unknown")
+            msg = f"Tool rebooted ({tool_name})"
+            log.info(msg)
+            return jsonify({"message": msg})
+        except Exception as exc:
+            log.error(f"Tool reboot failed: {exc}")
+            return jsonify({"message": str(exc)}), 500
+        finally:
+            _last_action = "idle"
+
+
+@app.route("/reboot-motors", methods=["POST"])
+def reboot_motors():
+    """Reboot/enable motors, then restore speed and return to reading pose."""
+    global _last_action
+    if not ensure_robot_ready():
+        return jsonify({"message": "robot_not_ready"}), 503
+    with _state_lock:
+        if _robot_busy:
+            return jsonify({"message": "robot_busy"}), 409
+
+        _last_action = "reboot_motors"
+        try:
+            # Prefer direct reboot method if exposed by SDK/runtime.
+            try:
+                _call_first_available(_robot, ["reboot_motors"])
+            except Exception:
+                _call_first_available(
+                    _robot.arm,
+                    ["reboot_motors", "reboot_motor", "reboot", "reboot_arm"],
+                )
+            time.sleep(1.0)
+            _call_first_available(_robot, ["set_learning_mode"], False)
+            _robot.arm.set_arm_max_velocity(MOVE_SPEED)
+            try:
+                if bool(_call_first_available(_robot, ["need_calibration"])):
+                    log.info("Motors reboot requires calibration — running auto calibration …")
+                    _call_first_available(_robot, ["calibrate_auto", "calibrate"])
+            except Exception as diag_exc:
+                log.warning(f"Post-reboot calibration check failed: {diag_exc}")
+            safe_move(READING_JOINTS, label="READING (after motors reboot)")
+            msg = "Motors reboot complete"
+            log.info(msg)
+            return jsonify({"message": msg})
+        except Exception as exc:
+            log.error(f"Motors reboot failed: {exc}")
+            return jsonify({"message": str(exc)}), 500
+        finally:
+            _last_action = "idle"
+
+
+@app.route("/calibrate", methods=["POST"])
+def calibrate_robot():
+    """Run automatic calibration and restore standard operating pose."""
+    global _robot_ok, _last_action, _freemotion_active
+    if not ensure_robot_ready():
+        return jsonify({"message": "robot_not_ready"}), 503
+    with _state_lock:
+        if _robot is None:
+            return jsonify({"message": "robot_not_ready"}), 503
+        if _robot_busy:
+            return jsonify({"message": "robot_busy"}), 409
+
+        prev_ready = _robot_ok
+        _last_action = "calibrating"
+        try:
+            _call_first_available(_robot, ["set_learning_mode"], False)
+            _freemotion_active = False
+            need_calib = bool(_call_first_available(_robot, ["need_calibration"]))
+            if need_calib:
+                _call_first_available(_robot, ["calibrate_auto", "calibrate"])
+            else:
+                log.info("Calibration not required according to robot diagnostics")
+            _robot.arm.set_arm_max_velocity(MOVE_SPEED)
+            safe_move(HOME_JOINTS, label="HOME (after calibration)")
+            safe_move(READING_JOINTS, label="READING (after calibration)")
+            _robot_ok = True
+            msg = "Calibration complete" if need_calib else "Calibration not required; pose reset complete"
+            log.info(msg)
+            return jsonify({"message": msg})
+        except Exception as exc:
+            _robot_ok = prev_ready
+            log.error(f"Calibration failed: {exc}")
+            return jsonify({"message": str(exc)}), 500
+        finally:
+            _last_action = "idle"
+
+
+@app.route("/emergency-stop", methods=["POST"])
+def emergency_stop():
+    """Immediate stop command for robot motion."""
+    global _robot_busy, _last_action
+    if not ensure_robot_ready():
+        return jsonify({"message": "robot_not_ready"}), 503
+    with _state_lock:
+        _last_action = "emergency_stop"
+        try:
+            _call_first_available(
+                getattr(_robot, "arm", _robot),
+                ["stop_move", "stop", "emergency_stop", "halt"],
+            )
+            _robot_busy = False
+            msg = "Emergency stop executed"
+            log.warning(msg)
+            return jsonify({"message": msg})
+        except Exception as exc:
+            log.error(f"Emergency stop failed: {exc}")
+            return jsonify({"message": str(exc)}), 500
+        finally:
+            _last_action = "idle"
+
+
 @app.route("/status", methods=["GET"])
 def get_status():
     """Robot arm status — polled by Node.js for dashboard display."""
+    need_calib, hardware_status, alerts = _collect_robot_diagnostics()
     with _state_lock:
+        robot_connected = _robot_ok or (_robot_session_mode == "standby" and _stream_robot_connected())
         return jsonify({
-            "robot_connected":    _robot_ok,
+            "robot_connected":    robot_connected,
             "robot_busy":         _robot_busy,
             "freemotion_active":  _freemotion_active,
             "last_action":        _last_action,
             "queue_size":         _action_queue.qsize(),
+            "need_calibration":   need_calib,
+            "hardware_status":    hardware_status,
+            "alerts":             alerts,
+            "session_mode":       _robot_session_mode,
         })
 
 
 @app.route("/health", methods=["GET"])
 def health():
     with _state_lock:
-        ok = _robot_ok
-    return jsonify({"status": "ok" if ok else "offline", "robot_connected": ok})
+        session_mode = _robot_session_mode
+        ok = _robot_ok or (session_mode == "standby" and _stream_robot_connected())
+    return jsonify({"status": "ok" if ok else "offline", "robot_connected": ok, "session_mode": session_mode})
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -434,6 +824,7 @@ if __name__ == "__main__":
 
     # 2 — Connect to robot in background so HTTP server starts immediately
     def robot_init():
+        return
         backoff = 5
         while True:
             try:

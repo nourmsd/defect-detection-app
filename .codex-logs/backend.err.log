@@ -1,0 +1,3 @@
+[ai-pipeline][stderr] Loading weights:   0%|          | 0/362 [00:00<?, ?it/s]
+[ai-pipeline][stderr] Loading weights: 100%|##########| 362/362 [00:00<00:00, 7215.96it/s]
+[ai-pipeline] exited with code null

@@ -106,6 +106,41 @@ async function acknowledgeErrorLog(req, res) {
   }
 }
 
+async function exportErrorLogs(req, res) {
+  try {
+    const filter = {};
+    if (req.query.resolved === 'false') filter.resolved = false;
+    if (req.query.resolved === 'true') filter.resolved = true;
+    if (req.query.severity) filter.severity = req.query.severity;
+
+    const logs = await ErrorLog.find(filter).sort({ timestamp: -1 });
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const header = [
+      'id', 'timestamp', 'severity', 'errorType', 'message',
+      'suggestedAction', 'resolved', 'acknowledgedAt', 'acknowledgedBy'
+    ].join(',');
+    const rows = logs.map((l) => ([
+      l._id?.toString(),
+      l.timestamp?.toISOString?.() || '',
+      l.severity,
+      l.errorType,
+      l.message,
+      l.suggestedAction || '',
+      String(Boolean(l.resolved)),
+      l.acknowledgedAt ? l.acknowledgedAt.toISOString() : '',
+      l.acknowledgedBy ? l.acknowledgedBy.toString() : ''
+    ].map(esc).join(',')));
+
+    const csv = [header, ...rows].join('\n');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="error-logs-${stamp}.csv"`);
+    res.status(200).send(csv);
+  } catch (err) {
+    res.status(500).json({ message: 'Error exporting error logs' });
+  }
+}
+
 /* =========================================================
    SETTINGS  (key/value store)
 ========================================================= */
@@ -151,6 +186,7 @@ module.exports = {
   createErrorLog,
   getErrorLogs,
   acknowledgeErrorLog,
+  exportErrorLogs,
   getSetting,
   setSetting,
   getSettings,

@@ -110,6 +110,9 @@ export class ApiService {
     last_action: string;
     queue_size: number;
     joints: number[];
+    need_calibration?: boolean;
+    hardware_status?: Record<string, any>;
+    alerts?: Array<{ level?: string; code?: string; message?: string }>;
   }> {
     return this.http.get<any>(
       `${this.baseUrl}/robot/status`,

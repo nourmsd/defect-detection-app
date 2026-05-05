@@ -15,5 +15,6 @@ router.post('/admin/timeline/event', authMiddleware, roleMiddleware(['admin']), 
 // Error logs (accessible by workers + admins)
 router.get('/error-logs', authMiddleware, roleMiddleware(['admin', 'worker']), systemController.getErrorLogs);
 router.put('/error-logs/:id/acknowledge', authMiddleware, roleMiddleware(['admin', 'worker']), systemController.acknowledgeErrorLog);
+router.get('/error-logs/export', authMiddleware, roleMiddleware(['admin', 'worker']), systemController.exportErrorLogs);
 
 module.exports = router;

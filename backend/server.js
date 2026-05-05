@@ -26,10 +26,13 @@ const User = require('./models/User');
 
 const PIPELINE_EVENT_PREFIX = 'SOCKET_EVENT ';
 const NIRYO_STREAM_URL = process.env.NIRYO_STREAM_URL || 'http://127.0.0.1:5001';
+const ROBOT_SERVICE_URL = process.env.ROBOT_SERVICE_URL || 'http://127.0.0.1:5002';
 const PIPELINE_EVENT_POLL_MS = Number(process.env.PIPELINE_EVENT_POLL_MS || 3000);
+const AI_STREAM_URL = `http://127.0.0.1:${process.env.AI_STREAM_PORT || '5003'}`;
 
 let aiProc = null;
 let streamProc = null;
+let pickPlaceProc = null;
 let systemEventTimer = null;
 
 let lastRobotAlertIds = new Set();
@@ -202,8 +205,29 @@ async function handlePipelineStructuredEvent(msg, io) {
 
 /* ===================== STREAM ===================== */
 
-function startNiryoStreamService() {
+async function startNiryoStreamService() {
   if (streamProc && !streamProc.killed) return;
+
+  // If already started externally, don't spawn a duplicate stream service.
+  try {
+    const { response, data } = await fetchJsonWithTimeout(`${NIRYO_STREAM_URL}/health`, {}, 2500);
+    const looksLikeStreamService =
+      Boolean(response?.ok) &&
+      data &&
+      typeof data === 'object' &&
+      (
+        Object.prototype.hasOwnProperty.call(data, 'robot_connected') ||
+        Object.prototype.hasOwnProperty.call(data, 'avg_fps') ||
+        Object.prototype.hasOwnProperty.call(data, 'stream_stale')
+      );
+    if (looksLikeStreamService) {
+      console.log('[niryo-stream] service already running — reusing existing process');
+      return;
+    }
+  } catch {
+    // ignore probe errors — we'll attempt to spawn below
+  }
+
   const script = path.join(__dirname, 'niryo_stream.py');
   let cmd;
   try {
@@ -213,7 +237,7 @@ function startNiryoStreamService() {
     return;
   }
   try {
-    streamProc = spawn(cmd.command, [...cmd.args, script], {
+    streamProc = spawn(cmd.command, [...cmd.args, '-u', script], {
       cwd: __dirname,
       env: buildBundledPythonEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -238,6 +262,69 @@ function startNiryoStreamService() {
     });
   } catch (e) {
     console.warn('[niryo-stream] spawn failed:', e.message);
+  }
+}
+
+async function startNiryoPickPlaceService() {
+  if (pickPlaceProc && !pickPlaceProc.killed) return;
+
+  // If already started externally (e.g. start_all.bat), don't spawn duplicate.
+  try {
+    const { response, data } = await fetchJsonWithTimeout(`${ROBOT_SERVICE_URL}/status`, {}, 2500);
+    const looksLikeRobotService =
+      Boolean(response?.ok) &&
+      data &&
+      typeof data === 'object' &&
+      (
+        // niryo_pick_place.py returns these keys
+        Object.prototype.hasOwnProperty.call(data, 'robot_connected') ||
+        Object.prototype.hasOwnProperty.call(data, 'last_action') ||
+        Object.prototype.hasOwnProperty.call(data, 'queue_size')
+      );
+    if (looksLikeRobotService) {
+      console.log('[niryo-pick-place] service already running — reusing existing process');
+      return;
+    }
+  } catch {
+    // ignore probe errors — we'll attempt to spawn below
+  }
+
+  const script = path.join(__dirname, 'niryo_pick_place.py');
+  let cmd;
+  try {
+    cmd = resolvePythonCommand();
+  } catch (e) {
+    console.warn('[niryo-pick-place] Python venv not found — pick/place service disabled:', e.message);
+    return;
+  }
+
+  try {
+    pickPlaceProc = spawn(cmd.command, [...cmd.args, '-u', script], {
+      cwd: __dirname,
+      env: buildBundledPythonEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    const _healthPattern = /GET \/(status|health)/;
+    pickPlaceProc.stdout.on('data', (d) => {
+      d.toString().split('\n').forEach((line) => {
+        const l = line.trim();
+        if (l && !_healthPattern.test(l)) console.log(`[niryo-pick-place] ${l}`);
+      });
+    });
+    pickPlaceProc.stderr.on('data', (d) => {
+      d.toString().split('\n').forEach((line) => {
+        const l = line.trim();
+        if (l && !_healthPattern.test(l)) console.log(`[niryo-pick-place] ${l}`);
+      });
+    });
+    pickPlaceProc.on('exit', (code) => {
+      console.warn(`[niryo-pick-place] exited with code ${code} — will restart in 5s`);
+      pickPlaceProc = null;
+      setTimeout(() => { startNiryoPickPlaceService(); }, 5000);
+    });
+  } catch (e) {
+    console.warn('[niryo-pick-place] spawn failed:', e.message);
   }
 }
 
@@ -266,11 +353,12 @@ function startAIPipeline(io) {
   _pipelineActive = true;
   console.log('[ai-pipeline] Robot connected — starting frame acquisition and inference loop');
 
-  aiProc = spawn(cmd.command, [...cmd.args, script], {
+  aiProc = spawn(cmd.command, [...cmd.args, '-u', script], {
     cwd: aiRoot,
     env: buildBundledPythonEnv({
       PIPELINE_EVENT_PREFIX,
       NIRYO_STREAM_URL: `${NIRYO_STREAM_URL}/stream`,
+      AI_STREAM_PORT: process.env.AI_STREAM_PORT || '5003',
     }),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -382,9 +470,10 @@ async function pollSystemEvents(io) {
   try {
     const health = await safeFetch(`${NIRYO_STREAM_URL}/health`);
     const robotHealth = await safeFetch(`${NIRYO_STREAM_URL}/robot-health`);
+    const aiHealth = await safeFetch(`${AI_STREAM_URL}/health`);
 
     const robotConnected = Boolean(health?.robot_connected);
-    const aiOnline = health?.status === 'online';
+    const aiOnline = Boolean(aiHealth?.status === 'ok' || aiHealth?.status === 'online');
     const dbOnline = mongoose.connection.readyState === 1;
     // PLC is considered online when robot arm connection is established
     const plcOnline = robotConnected;
@@ -598,7 +687,12 @@ mongoose.connect(MONGO_URI)
     );
     // ──────────────────────────────────────────────────────────────────────
 
-    startNiryoStreamService();
+    // Start robot control first so it can calibrate/move before the camera stream
+    // grabs a connection (some robot firmware/SDK combos behave poorly with
+    // multiple concurrent TCP clients).
+    startNiryoPickPlaceService();
+    // Give pick/place time to calibrate/move before stream connects.
+    setTimeout(() => startNiryoStreamService(), 12000);
     // AI pipeline is NOT started here — startSystemEventPolling checks robot health
     // and calls startAIPipeline only when _robotConnected becomes true.
     startSystemEventPolling(io);

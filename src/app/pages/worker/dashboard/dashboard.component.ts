@@ -131,10 +131,15 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   private readonly STREAM_BASE_PORT = 5001;
   private readonly STREAM_RETRY_MS = 4000;
   private readonly POLL_MS = 3000;
+  private readonly ROBOT_OFFLINE_FAILURE_THRESHOLD = 2;
+  private readonly ROBOT_DISCONNECT_GRACE_MS = 10000;
   private streamHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
   private streamRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionStartIso = new Date().toISOString();
   private seenInspectionIds = new Set<string>();
+  private seenRobotAlertKeys = new Set<string>();
+  private robotStatusFailureCount = 0;
+  private lastRobotSeenConnectedAt = 0;
   private subscriptions = new Subscription();
   private clockTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -272,7 +277,9 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   private pollRobotStatus(): void {
     this.apiService.getRobotStatus().subscribe({
       next: (status) => {
-        this.isRobotConnected = status.robot_connected;
+        this.robotStatusFailureCount = 0;
+        const robotConnected = Boolean(status.robot_connected);
+        this.applyRobotConnectivity(robotConnected);
         this.robotBusy = status.robot_busy ?? false;
         this.freemotionActive = status.freemotion_active ?? false;
         this.robotLastAction = status.last_action ?? '—';
@@ -281,12 +288,54 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
         const newJoints: number[] = status.joints || [];
         this.updateJointMovement(newJoints);
         this.jointPositions = newJoints;
+        this.ingestRobotStatusAlerts(status.alerts);
       },
       error: () => {
-        this.isRobotConnected = false;
-        this.jointPositions = [];
+        this.robotStatusFailureCount += 1;
+        // Avoid UI flapping from transient backend/network hiccups.
+        if (this.robotStatusFailureCount >= this.ROBOT_OFFLINE_FAILURE_THRESHOLD) {
+          this.applyRobotConnectivity(false);
+          if (!this.isRobotConnected) {
+            this.jointPositions = [];
+            this.robotBusy = false;
+            this.robotQueueSize = 0;
+          }
+        }
       }
     });
+  }
+
+  private ingestRobotStatusAlerts(alerts?: Array<{ level?: string; code?: string; message?: string }>): void {
+    if (!Array.isArray(alerts) || alerts.length === 0) return;
+    const nowIso = new Date().toISOString();
+    for (const a of alerts) {
+      const level = ((a?.level || 'warning') as string).toLowerCase();
+      const code = String(a?.code || 'robot_status');
+      const message = String(a?.message || 'Robot diagnostic alert');
+      const key = `${code}:${message}`;
+      if (this.seenRobotAlertKeys.has(key)) continue;
+      this.seenRobotAlertKeys.add(key);
+      const alarm: RobotAlarm = { level, message, timestamp: nowIso };
+      this.alarms = [alarm, ...this.alarms].slice(0, 30);
+      if (level === 'critical' || level === 'error' || level === 'warning') {
+        this.snackBar.open(`ROBOT ${level.toUpperCase()}: ${message}`, 'Close', { duration: 5000 });
+      }
+    }
+    this.cdr.markForCheck();
+  }
+
+  private applyRobotConnectivity(robotConnectedNow: boolean): void {
+    const now = Date.now();
+    if (robotConnectedNow) {
+      this.lastRobotSeenConnectedAt = now;
+      this.isRobotConnected = true;
+      return;
+    }
+
+    const recentlyConnected = (now - this.lastRobotSeenConnectedAt) < this.ROBOT_DISCONNECT_GRACE_MS;
+    if (!recentlyConnected) {
+      this.isRobotConnected = false;
+    }
   }
 
   private updateJointMovement(newJoints: number[]): void {
@@ -555,12 +604,12 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
 
   private applySystemHealth(health: SystemHealthSocketPayload): void {
     this.fps = Number(health?.fps) || 0;
-    this.isRobotConnected = Boolean(health?.robot_connected);
     this.systemLinks.camera = health?.stream !== 'offline';
     this.streamHealth = {
       ...this.streamHealth,
       status: health?.stream || 'offline',
-      robot_connected: Boolean(health?.robot_connected),
+      // Keep robot connectivity sourced from HTTP /robot/status polling.
+      robot_connected: this.isRobotConnected,
       avg_fps: Number(health?.fps) || 0,
       camera_status: health?.camera || 'Stream offline'
     };
@@ -571,8 +620,12 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
       next: (health) => {
         this.streamHealth = health;
         this.systemLinks.camera = health.status !== 'offline' && !health.stream_stale;
+        this.applyRobotConnectivity(Boolean(health.robot_connected));
       },
-      error: () => { this.systemLinks.camera = false; }
+      error: () => {
+        this.systemLinks.camera = false;
+        this.applyRobotConnectivity(false);
+      }
     });
   }
 

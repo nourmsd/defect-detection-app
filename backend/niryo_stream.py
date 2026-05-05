@@ -69,6 +69,8 @@ _last_frame_time    = 0.0
 _camera_ok          = False
 _robot_connected    = False
 _reconnect_attempts = 0
+_camera_paused      = False
+_disconnect_requested = False
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ROBOT CONNECTION
@@ -78,6 +80,7 @@ def _connect_robot():
     """Try once to connect to the Niryo robot. Returns a NiryoRobot or None."""
     if not _pyniryo_available:
         return None
+
     try:
         log.info(f"Connecting to robot at {ROBOT_IP} …")
         robot = NiryoRobot(ROBOT_IP)
@@ -86,6 +89,10 @@ def _connect_robot():
     except Exception as exc:
         log.warning(f"Robot connection failed: {exc}")
         return None
+
+
+def _camera_pause_message():
+    return _make_fallback_frame("Niryo camera — temporarily paused")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # FALLBACK FRAME  (shown while robot is offline / reconnecting)
@@ -133,7 +140,7 @@ def camera_loop():
     via robot.get_img_compressed(). Reconnects automatically on failure.
     """
     global _latest_frame, _frame_count, _last_frame_time
-    global _camera_ok, _robot_connected, _reconnect_attempts
+    global _camera_ok, _robot_connected, _reconnect_attempts, _camera_paused, _disconnect_requested
 
     robot   = None
     backoff = 2.0
@@ -166,6 +173,28 @@ def camera_loop():
 
         # ── Fetch frame from robot camera ────────────────────────
         try:
+            with _lock:
+                paused = _camera_paused
+                disconnect_requested = _disconnect_requested
+            if paused:
+                if disconnect_requested and robot is not None:
+                    try:
+                        robot.close_connection()
+                    except Exception as exc:
+                        log.warning(f"Pause disconnect warning: {exc}")
+                    robot = None
+                    with _lock:
+                        _disconnect_requested = False
+
+                with _lock:
+                    if _latest_frame is None:
+                        _latest_frame = _camera_pause_message()
+                    _last_frame_time = time.time()
+                    _camera_ok = True
+                    _robot_connected = True
+                time.sleep(FRAME_INTERVAL)
+                continue
+
             img = robot.get_img_compressed()
 
             if img is None:
@@ -260,21 +289,23 @@ def health():
         robot_connected    = _robot_connected
         frame_count        = _frame_count
         reconnect_attempts = _reconnect_attempts
+        camera_paused      = _camera_paused
         last_frame_age     = (
             round(now - _last_frame_time, 1) if _last_frame_time else None
         )
 
     avg_fps      = round(frame_count / max(uptime, 1), 2)
-    stream_stale = (last_frame_age is None) or (last_frame_age > FRAME_STALE_SEC)
+    stream_stale = False if camera_paused else ((last_frame_age is None) or (last_frame_age > FRAME_STALE_SEC))
 
     camera_status = (
+        "paused"  if camera_paused else
         "ok"      if (camera_ok and not stream_stale) else
         "stale"   if (camera_ok and stream_stale)     else
         "offline"
     )
 
     return jsonify({
-        "status":             "ok" if (camera_ok and not stream_stale) else "degraded",
+        "status":             "ok" if ((camera_paused or camera_ok) and not stream_stale) else "degraded",
         "robot_connected":    robot_connected,
         "pyniryo_available":  _pyniryo_available,
         "robot_ip":           ROBOT_IP,
@@ -286,7 +317,29 @@ def health():
         "stream_stale":       stream_stale,
         "last_frame_age_sec": last_frame_age,
         "reconnect_attempts": reconnect_attempts,
+        "camera_paused":      camera_paused,
     })
+
+
+@app.route("/camera/pause", methods=["POST"])
+def pause_camera():
+    global _camera_paused, _latest_frame, _last_frame_time, _disconnect_requested
+    with _lock:
+        _camera_paused = True
+        _disconnect_requested = True
+        _latest_frame = _camera_pause_message()
+        _last_frame_time = time.time()
+    return jsonify({"paused": True})
+
+
+@app.route("/camera/resume", methods=["POST"])
+def resume_camera():
+    global _camera_paused, _last_frame_time, _disconnect_requested
+    with _lock:
+        _camera_paused = False
+        _disconnect_requested = False
+        _last_frame_time = time.time()
+    return jsonify({"paused": False})
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

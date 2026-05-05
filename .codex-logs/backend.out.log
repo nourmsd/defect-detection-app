@@ -1,0 +1,25 @@
+[dotenv@17.3.1] injecting env (5) from backend\.env -- tip: ⚡️ secrets for agents: https://dotenvx.com/as2
+Connected to MongoDB
+✅ Email transporter ready — connected to Gmail
+[DailyReset] Scheduled for 19:00 (in 158 min)
+Server running on port 5000
+[system] Robot connected — starting AI pipeline (frame acquisition + inference)
+[Python] Using venv: C:\Users\nourm\OneDrive\Desktop\P\Stage_PFE\smart-quality-control-frontend\backend\niryo_env\Scripts\python.exe
+[ai-pipeline] Robot connected — starting frame acquisition and inference loop
+[niryo-pick-place] service already running — reusing existing process
+[niryo-stream] service already running — reusing existing process
+[ai-pipeline] [INIT] Loading shared YOLO model ...
+[ai-pipeline] [INIT] Loading Pipeline A -- TrOCR flavor reader ...
+[ai-pipeline] [FLAVOR] Loading TrOCR from './TrCustom' on cpu ...
+[ai-pipeline] [INIT] Loading Pipeline B -- Expiry classifier on cpu ...
+[ai-pipeline] [EXPIRY] Classifier loaded from 'C:\Users\nourm\OneDrive\Desktop\P\Stage_PFE\ai\best_model.pt' on cpu
+[ai-pipeline] [INIT] AI stream -> http://0.0.0.0:5003/ai_stream
+[ai-pipeline] [INIT] Waiting for robot via http://127.0.0.1:5001/health ...
+[ai-pipeline] * Serving Flask app 'ai_stream_server'
+[ai-pipeline] * Debug mode: off
+[ai-pipeline] [INIT] Robot connected -- starting frame acquisition
+[ai-pipeline] [grabber] connected → http://127.0.0.1:5001/stream
+[ai-pipeline] [INIT] First frame received -- state machine starting.
+[system] Robot disconnected — suspending AI pipeline (no inference, no frame analysis)
+[ai-pipeline] Robot disconnected — stopping inference loop gracefully
+[ai-pipeline] Robot disconnected — pipeline suspended until robot reconnects
