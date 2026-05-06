@@ -45,6 +45,12 @@ Thumbs.db
 
 # Python virtual environment
 niryo_env/
+niryo_venv/
+venv/
+.venv/
+
+# Claude Code worktrees
+.claude/worktrees/
 
 # Python cache
 __pycache__/
