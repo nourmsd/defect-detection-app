@@ -143,7 +143,15 @@ GRIPPER_RELEASE_MS = 400   # ms to hold after release
 POLL_INTERVAL_S    = 0.5   # worker queue poll interval
 
 # ── Model paths ───────────────────────────────────────────────────────────────
-_AI_DIR               = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai")
+_AI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai")
+if not os.path.exists(os.path.join(_AI_DIR, "yog_yolo26n.pt")):
+    # In git worktrees model files (gitignored) live in the main checkout:
+    # <project>/.claude/worktrees/<name>/backend/  →  4 levels up  →  <project>/backend/ai
+    _worktree_fallback = os.path.normpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "backend", "ai")
+    )
+    if os.path.exists(os.path.join(_worktree_fallback, "yog_yolo26n.pt")):
+        _AI_DIR = _worktree_fallback
 YOLO_MODEL_PATH       = os.path.join(_AI_DIR, "yog_yolo26n.pt")
 FLAVOR_MODEL_PATH     = os.path.join(_AI_DIR, "TrCustom")
 CLASSIFIER_MODEL_PATH = os.path.join(_AI_DIR, "best_model.pt")
