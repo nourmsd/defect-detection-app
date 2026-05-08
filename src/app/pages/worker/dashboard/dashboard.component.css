@@ -255,7 +255,7 @@
 
 /* Center: detection history grows to fill */
 .hmi-col-center .hmi-hist-card {
-  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  flex: 1; min-height: 90px; display: flex; flex-direction: column;
 }
 
 /* ══════════════════════════════════════════════════════
@@ -470,10 +470,10 @@
 }
 
 .hmi-donut-wrap {
-  position: relative; width: 140px; height: 140px; flex-shrink: 0;
+  position: relative; width: 110px; height: 110px; flex-shrink: 0;
 }
 .hmi-donut-svg {
-  width: 140px; height: 140px;
+  width: 110px; height: 110px;
   transform: rotate(-90deg);
   overflow: visible;
 }
@@ -544,7 +544,7 @@
 .hmi-hist-dots::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 2px; }
 
 .hmi-dot {
-  width: 13px; height: 13px; border-radius: 50%;
+  width: 16px; height: 16px; border-radius: 50%;
   cursor: default; transition: transform .15s, box-shadow .15s;
 }
 .hmi-dot:hover { transform: scale(1.4); }
@@ -584,7 +584,7 @@
 .hmi-ci-section {
   flex: 1; display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: 3px; padding: 8px 10px;
+  gap: 4px; padding: 10px 8px;
 }
 
 .hmi-ci-sep {
@@ -593,12 +593,12 @@
 }
 
 .hmi-ci-icon {
-  width: 36px; height: 36px; border-radius: 8px;
+  width: 40px; height: 40px; border-radius: 8px;
   border: 2px solid var(--border); background: var(--bg-card-alt);
   display: flex; align-items: center; justify-content: center;
   transition: all .3s;
 }
-.hmi-ci-icon mat-icon { font-size: 20px; width: 20px; height: 20px; color: var(--text-muted); }
+.hmi-ci-icon mat-icon { font-size: 22px; width: 22px; height: 22px; color: var(--text-muted); }
 .ci-icon-ok  { border-color: var(--green); background: var(--green-dim); }
 .ci-icon-ok  mat-icon { color: var(--green); }
 .ci-icon-nok { border-color: var(--red);   background: var(--red-dim); }
@@ -617,10 +617,10 @@
 
 /* AI Confidence semicircle gauge (viewBox 0 0 120 72, r=48) */
 .hmi-ci-gauge-wrap {
-  position: relative; width: 120px; height: 72px;
+  position: relative; width: 140px; height: 84px;
 }
 .hmi-ci-gauge-svg {
-  width: 120px; height: 72px; overflow: visible;
+  width: 140px; height: 84px; overflow: visible;
 }
 
 /* Track arc */
@@ -640,7 +640,7 @@
 /* Number centred under arc */
 .hmi-ci-gauge-num {
   position: absolute; bottom: -2px; left: 50%; transform: translateX(-50%);
-  font-size: 20px; font-weight: 800; font-family: var(--font-data);
+  font-size: 24px; font-weight: 800; font-family: var(--font-data);
   color: var(--text-primary); line-height: 1; white-space: nowrap;
 }
 
@@ -828,7 +828,7 @@
 }
 @media (max-width: 1280px) {
   .hmi-body { grid-template-columns: minmax(0, 340px) 1fr minmax(0, 270px); }
-  .hmi-donut-wrap, .hmi-donut-svg { width: 120px; height: 120px; }
+  .hmi-donut-wrap, .hmi-donut-svg { width: 95px; height: 95px; }
 }
 
 @media (max-width: 1100px) {

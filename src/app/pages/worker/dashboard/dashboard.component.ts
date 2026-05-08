@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component, NgZone, OnDestroy, OnInit } from '@angula
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { interval, Subscription } from 'rxjs';
 import { AuthService } from '../../../services/auth.service';
-import { ApiService, Inspection, SavedJointPosition, StreamHealth } from '../../../services/api.service';
+import { ApiService, Inspection, StreamHealth } from '../../../services/api.service';
 import {
   InferenceStatusSocketPayload,
   InspectionSocketPayload,
@@ -91,7 +91,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   jointPositions: number[] = [];
 
   /* ── Robot status (extended) ───────────────────────────── */
-  robotBusy = false;
   freemotionActive = false;
   robotLastAction = '—';
   robotQueueSize = 0;
@@ -117,15 +116,10 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   /* ── Command loading states ─────────────────────────────── */
   cmdLoading: Record<string, boolean> = {};
 
-  /* ── Freemotion / save position ─────────────────────────── */
+  /* ── Robot action feedback ─────────────────────────────── */
   actionLoading = false;
   actionMessage = '';
   actionSuccess = true;
-  savePosName = '';
-  savingPosition = false;
-  savedPositions: SavedJointPosition[] = [];
-  positionsLoading = false;
-  expandedPositionId: string | null = null;
 
   /* ── Internal ───────────────────────────────────────────── */
   private readonly STREAM_BASE_PORT = 5001;
@@ -142,9 +136,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   private lastRobotSeenConnectedAt = 0;
   private subscriptions = new Subscription();
   private clockTimer: ReturnType<typeof setInterval> | null = null;
-
-  /* ── Arc gauge constant (π × 34 ≈ 106.8) ───────────────── */
-  readonly JOINT_ARC_TOTAL = 106.8;
 
   constructor(
     private socketService: SocketService,
@@ -163,7 +154,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     this.syncLiveSnapshot();
     this.pollRobotStatus();
     this.pollStreamHealth();
-    this.loadSavedPositions();
     this.loadErrorLogs();
 
     /* Real-time socket events */
@@ -280,7 +270,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
         this.robotStatusFailureCount = 0;
         const robotConnected = Boolean(status.robot_connected);
         this.applyRobotConnectivity(robotConnected);
-        this.robotBusy = status.robot_busy ?? false;
         this.freemotionActive = status.freemotion_active ?? false;
         this.robotLastAction = status.last_action ?? '—';
         this.robotQueueSize = status.queue_size ?? 0;
@@ -297,7 +286,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
           this.applyRobotConnectivity(false);
           if (!this.isRobotConnected) {
             this.jointPositions = [];
-            this.robotBusy = false;
             this.robotQueueSize = 0;
           }
         }
@@ -305,12 +293,18 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     });
   }
 
+  // Alert codes the operator does NOT want surfaced. The dashboard's connectivity
+  // pill already shows when the robot is offline, so suppressing this code keeps
+  // the alert list focused on actionable issues only.
+  private readonly suppressedAlertCodes = new Set<string>(['robot_not_ready']);
+
   private ingestRobotStatusAlerts(alerts?: Array<{ level?: string; code?: string; message?: string }>): void {
     if (!Array.isArray(alerts) || alerts.length === 0) return;
     const nowIso = new Date().toISOString();
     for (const a of alerts) {
-      const level = ((a?.level || 'warning') as string).toLowerCase();
       const code = String(a?.code || 'robot_status');
+      if (this.suppressedAlertCodes.has(code)) continue;
+      const level = ((a?.level || 'warning') as string).toLowerCase();
       const message = String(a?.message || 'Robot diagnostic alert');
       const key = `${code}:${message}`;
       if (this.seenRobotAlertKeys.has(key)) continue;
@@ -417,70 +411,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     this.alarms = [];
   }
 
-  /* ════════════════════════════════════════════════════════
-     JOINT GAUGE HELPER
-  ════════════════════════════════════════════════════════ */
-
-  getJointFill(rad: number): string {
-    const normalized = Math.max(0, Math.min(1, ((rad || 0) + Math.PI) / (2 * Math.PI)));
-    return `${(normalized * this.JOINT_ARC_TOTAL).toFixed(1)} ${this.JOINT_ARC_TOTAL}`;
-  }
-
-  /* ════════════════════════════════════════════════════════
-     SAVE POSITION & SAVED POSITIONS
-  ════════════════════════════════════════════════════════ */
-
-  saveCurrentPosition(): void {
-    const name = (this.savePosName || '').trim();
-    if (!name || this.savingPosition) return;
-
-    this.savingPosition = true;
-    this.apiService.saveJointPosition(name).subscribe({
-      next: (res) => {
-        if (res.success && res.position) {
-          this.savedPositions = [res.position, ...this.savedPositions];
-          this.savePosName = '';
-          this.snackBar.open(`Position "${res.position.name}" saved`, 'OK', { duration: 2500 });
-        }
-        this.savingPosition = false;
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.savingPosition = false;
-        this.snackBar.open(err?.error?.message || 'Failed to save position', 'OK', { duration: 3000 });
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  loadSavedPositions(): void {
-    this.positionsLoading = true;
-    this.apiService.getSavedPositions().subscribe({
-      next: (res) => {
-        this.savedPositions = res.positions || [];
-        this.positionsLoading = false;
-        this.cdr.markForCheck();
-      },
-      error: () => { this.positionsLoading = false; }
-    });
-  }
-
-  deleteSavedPosition(id: string, event: Event): void {
-    event.stopPropagation();
-    this.apiService.deleteJointPosition(id).subscribe({
-      next: () => {
-        this.savedPositions = this.savedPositions.filter(p => p._id !== id);
-        if (this.expandedPositionId === id) this.expandedPositionId = null;
-        this.cdr.markForCheck();
-      },
-      error: () => this.snackBar.open('Failed to delete position', 'OK', { duration: 2500 })
-    });
-  }
-
-  togglePositionExpand(id: string): void {
-    this.expandedPositionId = this.expandedPositionId === id ? null : id;
-  }
-
   radToDeg(rad: number): string {
     return ((rad || 0) * 180 / Math.PI).toFixed(1);
   }
@@ -524,7 +454,7 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     this.inspections = [inspection, ...this.inspections.filter(i => i.id !== inspection.id)];
     this.histPage = 1;
 
-    if (inspection.label === 'OK') {
+    if (inspection.label === 'ok') {
       this.normalCount += 1;
     } else {
       this.defectCount += 1;
@@ -544,29 +474,31 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     return {
       id,
       label,
+      defect_type: (alert as any)?.defect_type ?? null,
+      flavor: (alert as any)?.flavor || 'missing',
       timestamp: alert?.timestamp || new Date().toISOString(),
       confidence: alert?.confidence,
       processing_time: alert?.processing_time,
-      detected_date: alert?.detected_date || 'missing'
+      expiry_date: (alert as any)?.expiry_date || (alert as any)?.detected_date || 'missing'
     };
   }
 
-  private normalizeLabel(raw: any): 'OK' | 'defective' | null {
+  private normalizeLabel(raw: any): 'ok' | 'defective' | null {
     const label = String(raw || '').toLowerCase();
-    if (['ok', 'normal', 'pass', 'conforming'].includes(label)) return 'OK';
+    if (['ok', 'normal', 'pass', 'conforming'].includes(label)) return 'ok';
     if (['defective', 'fail', 'nok', 'defect'].includes(label)) return 'defective';
     return null;
   }
 
   private updateLatestDetection(inspection: Inspection): void {
     this.lastDetectionTime = new Date(inspection.timestamp).toLocaleTimeString('en-GB', { hour12: false });
-    this.detectionStatus = inspection.label === 'OK' ? 'NORMAL' : 'DEFECTIVE';
+    this.detectionStatus = inspection.label === 'ok' ? 'NORMAL' : 'DEFECTIVE';
     if (inspection.confidence != null) {
       this.confidenceScore = inspection.confidence <= 1
         ? Math.round(inspection.confidence * 100) : Math.round(inspection.confidence);
     }
     if (inspection.processing_time != null) this.lastProcessingTime = inspection.processing_time;
-    if (inspection.detected_date != null) this.lastDetectedDate = inspection.detected_date;
+    if (inspection.expiry_date != null) this.lastDetectedDate = inspection.expiry_date;
   }
 
   /* ════════════════════════════════════════════════════════
@@ -672,11 +604,18 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     this.errorLogsLoading = true;
     this.apiService.getErrorLogs({ resolved: this.showResolvedLogs ? undefined : false }).subscribe({
       next: (res) => {
-        this.errorLogs = (res.logs || []).map((l: any) => ({ ...l, id: l._id || l.id }));
-        this.errorLogsLoading = false;
-        this.cdr.markForCheck();
+        this.ngZone.run(() => {
+          this.errorLogs = (res.logs || []).map((l: any) => ({ ...l, id: l._id || l.id }));
+          this.errorLogsLoading = false;
+          this.cdr.detectChanges();
+        });
       },
-      error: () => { this.errorLogsLoading = false; }
+      error: () => {
+        this.ngZone.run(() => {
+          this.errorLogsLoading = false;
+          this.cdr.detectChanges();
+        });
+      }
     });
   }
 
