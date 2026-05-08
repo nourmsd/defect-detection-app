@@ -33,7 +33,7 @@
 /* Light mode overrides */
 .light-mode {
   --bg-root:       #edf1f7;
-  --bg-sidebar:    #1a2236;
+  --bg-sidebar:    #ffffff;
   --bg-topbar:     #ffffff;
   --bg-card:       #ffffff;
   --bg-card-alt:   #f4f7fb;
@@ -908,14 +908,6 @@
    LIGHT MODE OVERRIDES
 ══════════════════════════════════════════════════════ */
 
-.light-mode .sidebar { background: #1a2236; }
-.light-mode .sidebar .brand-name { color: #edf3fa; }
-.light-mode .sidebar .brand-sub  { color: #556677; }
-.light-mode .sidebar .sidebar-section-title { color: #556677; }
-.light-mode .sidebar .sys-name   { color: #aabbcc; }
-.light-mode .sidebar .sys-tag    { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.1); color: #667788; }
-.light-mode .sidebar .ai-stat-val { color: #dde6f0; }
-.light-mode .sidebar .logout-btn  { color: #aabbcc; border-color: rgba(255,255,255,.12); }
 .light-mode .cam-placeholder { background: #e2eaf5; color: #4a5568; }
 .light-mode .cam-placeholder mat-icon { color: #94a3b8; }
 .light-mode .mini-donut-track { stroke: #d0dae8; }
