@@ -40,6 +40,9 @@ export interface ErrorLog {
 })
 export class WorkerDashboardComponent implements OnInit, OnDestroy {
 
+  /* ── Sidebar ───────────────────────────────────────────── */
+  sidebarCollapsed = false;
+
   /* ── Production counters ───────────────────────────────── */
   inspections: Inspection[] = [];
   normalCount = 0;

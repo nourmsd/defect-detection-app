@@ -1,515 +1,546 @@
-<div class="hmi-root" [class.light-mode]="themeService.isLight" [class.hmi-dark]="!themeService.isLight">
+<div class="worker-shell" [class.light-mode]="themeService.isLight">
 
-  <!-- ══════════════════════════ TOP BAR ══════════════════════════ -->
-  <header class="hmi-topbar">
-    <div class="hmi-brand">
-      <div class="hmi-logo"><mat-icon>precision_manufacturing</mat-icon></div>
-      <div class="hmi-brand-text">
-        <span class="hmi-brand-name">Agro-Tech Demonstrator</span>
-        <span class="hmi-brand-sub">WORKER STATION · ROBOT OPERATOR HMI</span>
+  <!-- ══════════════════ SIDEBAR ══════════════════ -->
+  <aside class="sidebar" [class.collapsed]="sidebarCollapsed">
+
+    <div class="sidebar-brand">
+      <div class="brand-icon"><mat-icon>precision_manufacturing</mat-icon></div>
+      <div class="brand-text" *ngIf="!sidebarCollapsed">
+        <span class="brand-name">WorkerHMI</span>
+        <span class="brand-sub">AGRO-TECH</span>
       </div>
     </div>
 
-    <div class="hmi-topbar-right">
-      <div class="hmi-status-strip">
-        <div class="hmi-pill" [class.pill-on]="systemLinks.aiModel" [class.pill-off]="!systemLinks.aiModel">
-          <span class="hmi-pill-dot"></span>AI MODEL
-        </div>
-        <div class="hmi-pill" [class.pill-on]="systemLinks.camera" [class.pill-off]="!systemLinks.camera">
-          <span class="hmi-pill-dot"></span>CAMERA
-        </div>
-        <div class="hmi-pill" [class.pill-on]="isRobotConnected" [class.pill-off]="!isRobotConnected">
-          <span class="hmi-pill-dot"></span>ROBOT TCP
-        </div>
+    <!-- System Status -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title" *ngIf="!sidebarCollapsed">SYSTEM STATUS</div>
+      <div class="sys-item">
+        <span class="sys-dot" [class.sys-on]="systemLinks.aiModel" [class.sys-off]="!systemLinks.aiModel"></span>
+        <ng-container *ngIf="!sidebarCollapsed">
+          <span class="sys-name">AI Model</span>
+          <span class="sys-tag" [class.tag-on]="systemLinks.aiModel">{{ systemLinks.aiModel ? 'ACTIVE' : 'WAIT' }}</span>
+        </ng-container>
       </div>
-      <div class="hmi-topbar-divider"></div>
-      <span class="hmi-live-dot"></span>
-      <span class="hmi-clock">{{ currentTime }}</span>
-      <button class="hmi-icon-btn" (click)="themeService.toggleTheme()"
-        [matTooltip]="themeService.isLight ? 'Dark Mode' : 'Light Mode'">
-        <mat-icon>{{ themeService.isLight ? 'dark_mode' : 'light_mode' }}</mat-icon>
-      </button>
-      <button class="hmi-icon-btn" (click)="logout()" matTooltip="Logout">
-        <mat-icon>logout</mat-icon>
-      </button>
+      <div class="sys-item">
+        <span class="sys-dot" [class.sys-on]="systemLinks.camera" [class.sys-off]="!systemLinks.camera"></span>
+        <ng-container *ngIf="!sidebarCollapsed">
+          <span class="sys-name">Camera</span>
+          <span class="sys-tag" [class.tag-on]="systemLinks.camera">{{ systemLinks.camera ? 'LIVE' : 'OFF' }}</span>
+        </ng-container>
+      </div>
+      <div class="sys-item">
+        <span class="sys-dot" [class.sys-on]="isRobotConnected" [class.sys-off]="!isRobotConnected"></span>
+        <ng-container *ngIf="!sidebarCollapsed">
+          <span class="sys-name">Robot TCP</span>
+          <span class="sys-tag" [class.tag-on]="isRobotConnected">{{ isRobotConnected ? 'OK' : 'OFF' }}</span>
+        </ng-container>
+      </div>
+      <div class="sys-item">
+        <span class="sys-dot" [class.sys-on]="streamHealth.pyniryo_available" [class.sys-off]="!streamHealth.pyniryo_available"></span>
+        <ng-container *ngIf="!sidebarCollapsed">
+          <span class="sys-name">PyNiryo SDK</span>
+          <span class="sys-tag" [class.tag-on]="streamHealth.pyniryo_available">{{ streamHealth.pyniryo_available ? 'OK' : 'OFF' }}</span>
+        </ng-container>
+      </div>
     </div>
-  </header>
 
-  <!-- ══════════════════════════ ALARM BANNERS (dynamic, top-fixed) ══════════════════════════ -->
-  <div class="hmi-alarm-overlay" *ngIf="alarms.length > 0">
-    <div *ngFor="let alarm of alarms.slice(0, 3)" class="hmi-alarm-banner"
-      [class.banner-crit]="alarm.level === 'critical' || alarm.level === 'error'"
-      [class.banner-warn]="alarm.level === 'warning'"
-      [class.banner-info]="alarm.level === 'info'">
-      <mat-icon class="banner-icon">
-        {{ (alarm.level === 'critical' || alarm.level === 'error') ? 'error' : alarm.level === 'warning' ? 'warning' : 'info' }}
-      </mat-icon>
-      <span class="banner-msg">{{ alarm.message }}</span>
-      <span class="banner-time">{{ alarm.timestamp | date:'HH:mm:ss' }}</span>
-      <span class="banner-more-tag" *ngIf="alarms.length > 3 && alarm === alarms[2]">
-        +{{ alarms.length - 3 }} more
-      </span>
-      <button class="banner-dismiss" (click)="clearAlarms()" matTooltip="Clear all alarms">
-        <mat-icon>close</mat-icon>
-      </button>
-    </div>
-  </div>
-
-  <!-- ══════════════════════════ 3-COLUMN BODY ══════════════════════════ -->
-  <div class="hmi-body">
-
-    <!-- ═══════════════ LEFT: Camera · AI · Status ═══════════════ -->
-    <div class="hmi-col hmi-col-left">
-
-      <!-- Camera Feed — fills available height -->
-      <div class="hmi-card hmi-camera-card">
-        <div class="hmi-card-label">
-          LIVE CAMERA FEED
-          <span class="hmi-fps-tag">{{ streamHealth.avg_fps > 0 ? (streamHealth.avg_fps | number:'1.0-1') : (fps > 0 ? fps : '0.0') }} FPS</span>
-        </div>
-        <div class="hmi-camera-box">
-          <span class="c-tl"></span><span class="c-tr"></span>
-          <span class="c-bl"></span><span class="c-br"></span>
-          <img class="hmi-stream-img" [src]="cameraStreamUrl" [class.hidden]="!streamActive"
-            (load)="onStreamLoad()" (error)="onStreamError()" alt="camera">
-          <div class="hmi-cam-placeholder" [class.hidden]="streamActive">
-            <mat-icon>videocam_off</mat-icon>
-            <span>{{ streamHealth.camera_status }}</span>
-            <span class="hmi-cam-sub">{{ streamHealth.status }}</span>
-          </div>
-          <div class="hmi-scanline"></div>
-          <div class="hmi-model-badge"
-            [class.badge-ok]="detectionStatus === 'NORMAL'"
-            [class.badge-nok]="detectionStatus === 'DEFECTIVE'">
-            <mat-icon *ngIf="detectionStatus === 'WAITING'">hourglass_empty</mat-icon>
-            <mat-icon *ngIf="detectionStatus === 'NORMAL'">check_circle</mat-icon>
-            <mat-icon *ngIf="detectionStatus === 'DEFECTIVE'">warning</mat-icon>
-            <span>{{ detectionStatus === 'NORMAL' ? 'CONFORMING' : detectionStatus }}</span>
-          </div>
-        </div>
-        <div class="hmi-cam-meta">
-          <div class="hmi-meta-cell">
-            <span class="hmi-meta-lbl">STREAM</span>
-            <span class="hmi-meta-val">{{ streamHealth.status === 'online' ? 'LIVE' : (streamHealth.status | uppercase) }}</span>
-          </div>
-          <div class="hmi-meta-cell">
-            <span class="hmi-meta-lbl">FRAMES</span>
-            <span class="hmi-meta-val">{{ streamHealth.frames_captured }}</span>
-          </div>
-          <div class="hmi-meta-cell">
-            <span class="hmi-meta-lbl">AVG FPS</span>
-            <span class="hmi-meta-val">{{ streamHealth.avg_fps > 0 ? (streamHealth.avg_fps | number:'1.0-1') : '0.0' }}</span>
-          </div>
-          <div class="hmi-meta-cell">
-            <span class="hmi-meta-lbl">FRAME AGE</span>
-            <span class="hmi-meta-val">{{ streamHealth.last_frame_age_sec }}s</span>
-          </div>
-        </div>
+    <!-- Live AI Pipeline -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title" *ngIf="!sidebarCollapsed">LIVE AI PIPELINE</div>
+      <div class="ai-status-badge"
+        [class.inf-reading]="inferenceStatus === 'READING' || inferenceStatus === 'PROCESSING'"
+        [class.inf-ok]="inferenceStatus === 'FINAL_NORMAL'"
+        [class.inf-nok]="inferenceStatus === 'FINAL_DEFECTIVE'"
+        [class.inf-idle]="inferenceStatus === 'NO_DETECTION' || inferenceStatus === 'IDLE'">
+        <mat-icon *ngIf="inferenceStatus === 'IDLE'">hourglass_empty</mat-icon>
+        <mat-icon *ngIf="inferenceStatus === 'NO_DETECTION'">search_off</mat-icon>
+        <mat-icon *ngIf="inferenceStatus === 'PROCESSING' || inferenceStatus === 'READING'">manage_search</mat-icon>
+        <mat-icon *ngIf="inferenceStatus === 'FINAL_NORMAL'">check_circle</mat-icon>
+        <mat-icon *ngIf="inferenceStatus === 'FINAL_DEFECTIVE'">warning</mat-icon>
+        <span *ngIf="!sidebarCollapsed">{{ inferenceStatus.replace('_', ' ') }}</span>
       </div>
-
-      <!-- AI Pipeline -->
-      <div class="hmi-card hmi-ai-card">
-        <div class="hmi-card-label">
-          LIVE AI PIPELINE
-          <span class="hmi-live-pulse"
-            [class.pulse-active]="inferenceStatus !== 'IDLE' && inferenceStatus !== 'NO_DETECTION'"></span>
+      <div class="ai-stats" *ngIf="!sidebarCollapsed">
+        <div class="ai-stat-row">
+          <span class="ai-stat-lbl">DATE</span>
+          <span class="ai-stat-val">{{ liveDate }}</span>
         </div>
-        <div class="hmi-inf-status"
-          [class.inf-reading]="inferenceStatus === 'READING' || inferenceStatus === 'PROCESSING'"
-          [class.inf-ok]="inferenceStatus === 'FINAL_NORMAL'"
-          [class.inf-nok]="inferenceStatus === 'FINAL_DEFECTIVE'"
-          [class.inf-idle]="inferenceStatus === 'NO_DETECTION' || inferenceStatus === 'IDLE'">
-          <mat-icon *ngIf="inferenceStatus === 'IDLE'">hourglass_empty</mat-icon>
-          <mat-icon *ngIf="inferenceStatus === 'NO_DETECTION'">search_off</mat-icon>
-          <mat-icon *ngIf="inferenceStatus === 'PROCESSING' || inferenceStatus === 'READING'">manage_search</mat-icon>
-          <mat-icon *ngIf="inferenceStatus === 'FINAL_NORMAL'">check_circle</mat-icon>
-          <mat-icon *ngIf="inferenceStatus === 'FINAL_DEFECTIVE'">warning</mat-icon>
-          {{ inferenceStatus.replace('_', ' ') }}
-        </div>
-        <div class="hmi-inf-grid">
-          <div class="hmi-inf-cell">
-            <span class="hmi-inf-val">{{ liveDate }}</span>
-            <span class="hmi-inf-lbl">DATE READ</span>
-          </div>
-          <div class="hmi-inf-cell">
-            <span class="hmi-inf-val"
-              [class.val-green]="liveConf >= 70"
-              [class.val-amber]="liveConf >= 40 && liveConf < 70"
-              [class.val-red]="liveConf > 0 && liveConf < 40">
-              {{ liveConf > 0 ? liveConf + '%' : '—' }}
-            </span>
-            <span class="hmi-inf-lbl">CONFIDENCE</span>
-          </div>
-          <div class="hmi-inf-cell">
-            <span class="hmi-inf-val">{{ liveYoloCount }}</span>
-            <span class="hmi-inf-lbl">DETECTIONS</span>
-          </div>
-          <div class="hmi-inf-cell">
-            <span class="hmi-inf-val">{{ inferenceFps > 0 ? (inferenceFps | number:'1.0-1') : '—' }}</span>
-            <span class="hmi-inf-lbl">INF FPS</span>
-          </div>
-          <div class="hmi-inf-cell">
-            <span class="hmi-inf-val">{{ inferenceMs > 0 ? inferenceMs + 'ms' : '—' }}</span>
-            <span class="hmi-inf-lbl">CYCLE TIME</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- System Status -->
-      <div class="hmi-card hmi-sysstat-card">
-        <div class="hmi-card-label">SYSTEM STATUS</div>
-        <div class="hmi-sys-item">
-          <span class="hmi-sys-dot" [class.sys-on]="systemLinks.aiModel" [class.sys-off]="!systemLinks.aiModel"></span>
-          <span class="hmi-sys-name">AI Vision Model</span>
-          <span class="hmi-sys-tag" [class.tag-on]="systemLinks.aiModel">{{ systemLinks.aiModel ? 'ACTIVE' : 'WAIT' }}</span>
-        </div>
-        <div class="hmi-sys-item">
-          <span class="hmi-sys-dot" [class.sys-on]="systemLinks.camera" [class.sys-off]="!systemLinks.camera"></span>
-          <span class="hmi-sys-name">Camera Stream</span>
-          <span class="hmi-sys-tag" [class.tag-on]="systemLinks.camera">{{ systemLinks.camera ? 'LIVE' : 'OFF' }}</span>
-        </div>
-        <div class="hmi-sys-item">
-          <span class="hmi-sys-dot" [class.sys-on]="isRobotConnected" [class.sys-off]="!isRobotConnected"></span>
-          <span class="hmi-sys-name">Robot TCP</span>
-          <span class="hmi-sys-tag" [class.tag-on]="isRobotConnected">{{ isRobotConnected ? 'OK' : 'OFF' }}</span>
-        </div>
-        <div class="hmi-sys-item">
-          <span class="hmi-sys-dot" [class.sys-on]="streamHealth.pyniryo_available" [class.sys-off]="!streamHealth.pyniryo_available"></span>
-          <span class="hmi-sys-name">PyNiryo SDK</span>
-          <span class="hmi-sys-tag" [class.tag-on]="streamHealth.pyniryo_available">{{ streamHealth.pyniryo_available ? 'OK' : 'OFF' }}</span>
-        </div>
-      </div>
-
-    </div><!-- /hmi-col-left -->
-
-
-    <!-- ═══════════════ CENTER: Analytics ═══════════════ -->
-    <div class="hmi-col hmi-col-center">
-
-      <!-- KPI Strip — compact -->
-      <div class="hmi-stats-row">
-        <div class="hmi-kpi-card">
-          <span class="hmi-kpi-val cyan">{{ totalInspections }}</span>
-          <span class="hmi-kpi-lbl">TOTAL INSPECTED</span>
-        </div>
-        <div class="hmi-kpi-card">
-          <span class="hmi-kpi-val green">{{ normalCount }}</span>
-          <span class="hmi-kpi-lbl">CONFORMING</span>
-        </div>
-        <div class="hmi-kpi-card">
-          <span class="hmi-kpi-val red">{{ defectCount }}</span>
-          <span class="hmi-kpi-lbl">DEFECTIVE</span>
-        </div>
-      </div>
-
-      <!-- Defect Rate Gauge -->
-      <div class="hmi-card hmi-donut-card">
-        <div class="hmi-card-label">DEFECT RATE</div>
-        <div class="hmi-donut-body">
-          <div class="hmi-donut-wrap">
-            <svg class="hmi-donut-svg" viewBox="0 0 160 160">
-              <circle class="hmi-donut-track" cx="80" cy="80" r="62"/>
-              <circle class="hmi-donut-fill" cx="80" cy="80" r="62"
-                [class.donut-green]="rejectionRate <= 5"
-                [class.donut-amber]="rejectionRate > 5 && rejectionRate <= 15"
-                [class.donut-red]="rejectionRate > 15"
-                [style.strokeDasharray]="(rejectionRate / 100 * 389.6) + ' 389.6'"/>
-            </svg>
-            <div class="hmi-donut-center">
-              <span class="hmi-donut-pct"
-                [class.pct-green]="rejectionRate <= 5"
-                [class.pct-amber]="rejectionRate > 5 && rejectionRate <= 15"
-                [class.pct-red]="rejectionRate > 15">{{ rejectionRate }}%</span>
-              <span class="hmi-donut-label">DEFECT</span>
-            </div>
-          </div>
-          <div class="hmi-donut-metrics">
-            <div class="hmi-dmetric"
-              [class.dmetric-warn]="rejectionRate > 5 && rejectionRate <= 15"
-              [class.dmetric-alert]="rejectionRate > 15">
-              <span class="hmi-dmetric-val"
-                [class.val-green]="rejectionRate <= 5"
-                [class.val-amber]="rejectionRate > 5 && rejectionRate <= 15"
-                [class.val-red]="rejectionRate > 15">{{ rejectionRate }}%</span>
-              <span class="hmi-dmetric-lbl">REJECTION RATE</span>
-            </div>
-            <div class="hmi-dmetric">
-              <span class="hmi-dmetric-val val-cyan">{{ totalInspections > 0 ? (100 - rejectionRate) : 0 }}%</span>
-              <span class="hmi-dmetric-lbl">PASS RATE</span>
-            </div>
-            <div class="hmi-dmetric">
-              <span class="hmi-dmetric-val">{{ defectCount }} / {{ totalInspections }}</span>
-              <span class="hmi-dmetric-lbl">REJECTED / TOTAL</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Detection History — grows to fill -->
-      <div class="hmi-card hmi-hist-card">
-        <div class="hmi-card-label">
-          DETECTION HISTORY
-          <span class="hmi-badge" *ngIf="inspections.length > 0">{{ inspections.length }}</span>
-        </div>
-        <div class="hmi-hist-dots">
-          <ng-container *ngIf="visibleInspections.length > 0">
-            <span *ngFor="let item of visibleInspections" class="hmi-dot"
-              [class.dot-ok]="item.label === 'ok'"
-              [class.dot-nok]="item.label !== 'ok'"
-              [title]="(item.label === 'ok' ? 'Conforming' : 'Defective') + ' · ' + (item.timestamp | date:'HH:mm:ss')">
-            </span>
-          </ng-container>
-          <ng-container *ngIf="inspections.length === 0">
-            <span *ngFor="let i of [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]"
-              class="hmi-dot dot-empty"></span>
-          </ng-container>
-        </div>
-        <div class="hmi-hist-footer">
-          <div class="hmi-hist-legend">
-            <span class="hmi-leg-item"><span class="hmi-leg-dot" style="background:#22c55e"></span>Conforming</span>
-            <span class="hmi-leg-item"><span class="hmi-leg-dot" style="background:#ef4444"></span>Defective</span>
-          </div>
-          <div class="hmi-hist-pager" *ngIf="histTotalPages > 1">
-            <button class="hmi-pager-btn" [disabled]="histPage === 1" (click)="histPage = histPage - 1">&#8249;</button>
-            <span class="hmi-pager-info">{{ histPage }} / {{ histTotalPages }}</span>
-            <button class="hmi-pager-btn" [disabled]="histPage === histTotalPages" (click)="histPage = histPage + 1">&#8250;</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Current Inspection — merged card -->
-      <div class="hmi-card hmi-current-insp">
-        <div class="hmi-card-label">CURRENT INSPECTION</div>
-        <div class="hmi-ci-body">
-
-          <!-- Result -->
-          <div class="hmi-ci-section">
-            <div class="hmi-ci-icon"
-              [class.ci-icon-ok]="detectionStatus === 'NORMAL'"
-              [class.ci-icon-nok]="detectionStatus === 'DEFECTIVE'">
-              <mat-icon *ngIf="detectionStatus === 'WAITING'">hourglass_empty</mat-icon>
-              <mat-icon *ngIf="detectionStatus === 'NORMAL'">check_circle</mat-icon>
-              <mat-icon *ngIf="detectionStatus === 'DEFECTIVE'">cancel</mat-icon>
-            </div>
-            <span class="hmi-ci-status"
-              [class.val-green]="detectionStatus === 'NORMAL'"
-              [class.val-red]="detectionStatus === 'DEFECTIVE'">
-              {{ detectionStatus === 'NORMAL' ? 'CONFORMING' : detectionStatus }}
-            </span>
-            <span class="hmi-ci-lbl">RESULT</span>
-          </div>
-
-          <div class="hmi-ci-sep"></div>
-
-          <!-- AI Confidence semicircle gauge -->
-          <div class="hmi-ci-section">
-            <div class="hmi-ci-gauge-wrap">
-              <svg class="hmi-ci-gauge-svg" viewBox="0 0 120 72">
-                <path class="hmi-cg-track" d="M 12 66 A 48 48 0 0 1 108 66"/>
-                <path class="hmi-cg-fill" d="M 12 66 A 48 48 0 0 1 108 66"
-                  [style.strokeDasharray]="(confidenceScore / 100 * 150.8) + ' 150.8'"
-                  [class.cg-green]="detectionStatus === 'NORMAL'"
-                  [class.cg-red]="detectionStatus === 'DEFECTIVE'"/>
-              </svg>
-              <div class="hmi-ci-gauge-num"
-                [class.val-green]="detectionStatus === 'NORMAL'"
-                [class.val-red]="detectionStatus === 'DEFECTIVE'">
-                {{ detectionStatus !== 'WAITING' ? confidenceScore + '%' : '—' }}
-              </div>
-            </div>
-            <span class="hmi-ci-lbl">AI CONFIDENCE</span>
-          </div>
-
-          <div class="hmi-ci-sep"></div>
-
-          <!-- Last Detection -->
-          <div class="hmi-ci-section">
-            <span class="hmi-ci-time">{{ lastDetectionTime }}</span>
-            <span class="hmi-ci-lbl">LAST DETECTED</span>
-            <span class="hmi-ci-date"
-              [class.val-green]="lastDetectedDate !== 'missing'"
-              [class.val-muted]="lastDetectedDate === 'missing'">
-              {{ lastDetectedDate !== 'missing' ? lastDetectedDate : '— none —' }}
-            </span>
-            <span class="hmi-ci-lbl">EXPIRY DATE</span>
-          </div>
-
-          <div class="hmi-ci-sep"></div>
-
-          <!-- Proc Time -->
-          <div class="hmi-ci-section">
-            <span class="hmi-ci-proc">{{ lastProcessingTime > 0 ? lastProcessingTime : '—' }}</span>
-            <span class="hmi-ci-lbl">PROC TIME (s)</span>
-          </div>
-
-        </div>
-      </div>
-
-    </div><!-- /hmi-col-center -->
-
-
-    <!-- ═══════════════ RIGHT: Robot Controls · Positions ═══════════════ -->
-    <div class="hmi-col hmi-col-right">
-
-      <!-- Robot Controls -->
-      <div class="hmi-card hmi-robot-panel">
-        <div class="hmi-card-label">
-          ROBOT CONTROLS
-          <span class="hmi-robot-conn-badge"
-            [class.badge-connected]="isRobotConnected"
-            [class.badge-disconnected]="!isRobotConnected">
-            {{ isRobotConnected ? '● CONNECTED' : '● OFFLINE' }}
+        <div class="ai-stat-row">
+          <span class="ai-stat-lbl">CONF</span>
+          <span class="ai-stat-val"
+            [class.val-green]="liveConf >= 70"
+            [class.val-amber]="liveConf >= 40 && liveConf < 70"
+            [class.val-red]="liveConf > 0 && liveConf < 40">
+            {{ liveConf > 0 ? liveConf + '%' : '—' }}
           </span>
         </div>
-
-        <div class="hmi-robot-status-strip">
-          <div class="hmi-rs-cell">
-            <span class="hmi-rs-lbl">TCP</span>
-            <span class="hmi-rs-val" [class.val-green]="isRobotConnected" [class.val-red]="!isRobotConnected">
-              {{ isRobotConnected ? 'OK' : 'OFFLINE' }}
-            </span>
-          </div>
-          <div class="hmi-rs-cell">
-            <span class="hmi-rs-lbl">STATE</span>
-            <span class="hmi-rs-val" [class.val-green]="isRobotConnected">
-              {{ isRobotConnected ? 'IDLE' : '—' }}
-            </span>
-          </div>
-          <div class="hmi-rs-cell">
-            <span class="hmi-rs-lbl">MODE</span>
-            <span class="hmi-rs-val" [class.val-amber]="freemotionActive" [class.val-cyan]="!freemotionActive && isRobotConnected">
-              {{ freemotionActive ? 'FREE' : (isRobotConnected ? 'AUTO' : '—') }}
-            </span>
-          </div>
-          <div class="hmi-rs-cell">
-            <span class="hmi-rs-lbl">QUEUE</span>
-            <span class="hmi-rs-val" [class.val-amber]="robotQueueSize > 0">{{ isRobotConnected ? robotQueueSize : '—' }}</span>
-          </div>
-          <div class="hmi-rs-cell">
-            <span class="hmi-rs-lbl">LAST ACTION</span>
-            <span class="hmi-rs-val hmi-rs-action">{{ isRobotConnected ? (robotLastAction || '—') : '—' }}</span>
-          </div>
+        <div class="ai-stat-row">
+          <span class="ai-stat-lbl">FPS</span>
+          <span class="ai-stat-val">{{ inferenceFps > 0 ? (inferenceFps | number:'1.0-1') : '—' }}</span>
         </div>
-
-        <button class="hmi-estop-btn"
-          [disabled]="cmdLoading['emergency-stop']"
-          [class.estop-firing]="cmdLoading['emergency-stop']"
-          (click)="robotCommand('emergency-stop', 'EMERGENCY STOP — immediately halt all robot motion. Confirm?')">
-          <span class="hmi-estop-icon">&#9632;</span>
-          {{ cmdLoading['emergency-stop'] ? 'Stopping…' : 'EMERGENCY STOP' }}
-        </button>
-
-        <div class="hmi-ctrl-grid">
-          <button class="hmi-ctrl-btn btn-tool"
-            [disabled]="!isRobotConnected || cmdLoading['reboot-tool']"
-            (click)="robotCommand('reboot-tool', 'Reboot the tool / gripper?')">
-            <mat-icon>build_circle</mat-icon>
-            <span>{{ cmdLoading['reboot-tool'] ? 'REBOOTING…' : 'REBOOT TOOL' }}</span>
-          </button>
-          <button class="hmi-ctrl-btn btn-motors"
-            [disabled]="!isRobotConnected || cmdLoading['reboot-motors']"
-            (click)="robotCommand('reboot-motors', 'Reboot robot motors? The arm will briefly lose torque.')">
-            <mat-icon>restart_alt</mat-icon>
-            <span>{{ cmdLoading['reboot-motors'] ? 'REBOOTING…' : 'REBOOT MOTORS' }}</span>
-          </button>
-          <button class="hmi-ctrl-btn btn-calibrate"
-            [disabled]="cmdLoading['calibrate']"
-            (click)="robotCommand('calibrate', 'Start calibration? The arm will move through calibration positions.')">
-            <mat-icon>my_location</mat-icon>
-            <span>{{ cmdLoading['calibrate'] ? 'CALIBRATING…' : 'CALIBRATION' }}</span>
-          </button>
+        <div class="ai-stat-row">
+          <span class="ai-stat-lbl">MS</span>
+          <span class="ai-stat-val">{{ inferenceMs > 0 ? inferenceMs + 'ms' : '—' }}</span>
         </div>
+      </div>
+    </div>
 
-        <div class="hmi-action-fb" *ngIf="actionMessage"
-          [class.fb-ok]="actionSuccess" [class.fb-err]="!actionSuccess">
-          <mat-icon>{{ actionSuccess ? 'check_circle' : 'error' }}</mat-icon>
-          {{ actionMessage }}
+    <div class="sidebar-footer">
+      <button class="logout-btn" (click)="logout()">
+        <mat-icon>logout</mat-icon>
+        <span *ngIf="!sidebarCollapsed">Logout</span>
+      </button>
+    </div>
+
+  </aside><!-- /sidebar -->
+
+
+  <!-- ══════════════════ MAIN AREA ══════════════════ -->
+  <div class="main-area">
+
+    <!-- TOP BAR -->
+    <header class="topbar">
+      <button class="menu-btn" (click)="sidebarCollapsed = !sidebarCollapsed">
+        <mat-icon>menu</mat-icon>
+      </button>
+      <span class="topbar-title">Worker Station</span>
+
+      <div class="topbar-status">
+        <div class="pill" [class.pill-on]="systemLinks.aiModel" [class.pill-off]="!systemLinks.aiModel">
+          <span class="pill-dot"></span>AI MODEL
+        </div>
+        <div class="pill" [class.pill-on]="systemLinks.camera" [class.pill-off]="!systemLinks.camera">
+          <span class="pill-dot"></span>CAMERA
+        </div>
+        <div class="pill" [class.pill-on]="isRobotConnected" [class.pill-off]="!isRobotConnected">
+          <span class="pill-dot"></span>ROBOT TCP
         </div>
       </div>
 
-      <!-- Reset Session -->
-      <button class="hmi-reset-btn" (click)="resetSession()">
-        <mat-icon>restart_alt</mat-icon>RESET SESSION
-      </button>
+      <div class="topbar-right">
+        <span class="live-dot"></span>
+        <span class="clock">{{ currentTime }}</span>
+        <button class="icon-btn" (click)="themeService.toggleTheme()"
+          [matTooltip]="themeService.isLight ? 'Dark Mode' : 'Light Mode'">
+          <mat-icon>{{ themeService.isLight ? 'dark_mode' : 'light_mode' }}</mat-icon>
+        </button>
+      </div>
+    </header>
 
-      <!-- Error Logs & Alerts — fills remaining right-column height -->
-      <div class="hmi-error-section">
+    <!-- ALARM BANNERS -->
+    <div class="alarm-overlay" *ngIf="alarms.length > 0">
+      <div *ngFor="let alarm of alarms.slice(0, 3)" class="alarm-banner"
+        [class.banner-crit]="alarm.level === 'critical' || alarm.level === 'error'"
+        [class.banner-warn]="alarm.level === 'warning'"
+        [class.banner-info]="alarm.level === 'info'">
+        <mat-icon class="banner-icon">
+          {{ (alarm.level === 'critical' || alarm.level === 'error') ? 'error' : alarm.level === 'warning' ? 'warning' : 'info' }}
+        </mat-icon>
+        <span class="banner-msg">{{ alarm.message }}</span>
+        <span class="banner-time">{{ alarm.timestamp | date:'HH:mm:ss' }}</span>
+        <span class="banner-more-tag" *ngIf="alarms.length > 3 && alarm === alarms[2]">
+          +{{ alarms.length - 3 }} more
+        </span>
+        <button class="banner-dismiss" (click)="clearAlarms()">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+    </div>
 
-        <div class="hmi-err-header" (click)="errorLogsExpanded = !errorLogsExpanded">
-          <mat-icon class="hmi-err-icon">bug_report</mat-icon>
-          <span class="hmi-err-title">ERROR LOGS &amp; ALERTS</span>
-          <span class="hmi-err-count" *ngIf="errorLogs.length > 0">{{ errorLogs.length }}</span>
-          <div class="hmi-err-actions" (click)="$event.stopPropagation()">
-            <button class="hmi-err-btn" (click)="toggleShowResolved()"
-              [matTooltip]="showResolvedLogs ? 'Hide resolved' : 'Show resolved'">
-              <mat-icon>{{ showResolvedLogs ? 'visibility_off' : 'visibility' }}</mat-icon>
-            </button>
-            <button class="hmi-err-btn" (click)="loadErrorLogs()" matTooltip="Refresh logs">
-              <mat-icon>refresh</mat-icon>
-            </button>
-          </div>
-          <mat-icon class="hmi-err-chevron">{{ errorLogsExpanded ? 'expand_less' : 'expand_more' }}</mat-icon>
+    <!-- CONTENT AREA -->
+    <div class="content-area">
+
+      <!-- ── KPI ROW ── -->
+      <div class="kpi-row">
+
+        <div class="stat-card">
+          <span class="stat-value cyan">{{ totalInspections }}</span>
+          <span class="stat-label">TOTAL INSPECTED</span>
+          <span class="stat-sub">session total</span>
         </div>
 
-        <div class="hmi-err-body" *ngIf="errorLogsExpanded">
+        <div class="stat-card">
+          <span class="stat-value green">{{ normalCount }}</span>
+          <span class="stat-label">CONFORMING</span>
+          <span class="stat-sub">passed QC</span>
+        </div>
 
-          <div class="hmi-err-loading" *ngIf="errorLogsLoading">
-            <mat-icon class="spin-icon">autorenew</mat-icon> Loading logs...
-          </div>
+        <div class="stat-card">
+          <span class="stat-value red">{{ defectCount }}</span>
+          <span class="stat-label">DEFECTIVE</span>
+          <span class="stat-sub">rejected</span>
+        </div>
 
-          <div class="hmi-err-empty" *ngIf="!errorLogsLoading && errorLogs.length === 0">
-            <mat-icon>check_circle</mat-icon>
-            <span>No active alerts — system nominal</span>
-          </div>
-
-          <div class="hmi-err-list" *ngIf="!errorLogsLoading && errorLogs.length > 0">
-            <div *ngFor="let log of errorLogs" class="hmi-err-row" [ngClass]="severityColor(log.severity)"
-              [class.err-resolved]="log.resolved">
-              <div class="hmi-err-sev">
-                <mat-icon>
-                  {{ log.severity === 'critical' ? 'dangerous' : log.severity === 'error' ? 'error' : 'warning' }}
-                </mat-icon>
-                <span>{{ log.severity | uppercase }}</span>
+        <!-- 4th card: Defect Rate donut -->
+        <div class="stat-card stat-card-wide">
+          <div class="donut-row">
+            <div class="mini-donut-wrap">
+              <svg class="mini-donut-svg" viewBox="0 0 160 160">
+                <circle class="mini-donut-track" cx="80" cy="80" r="62"/>
+                <circle class="mini-donut-fill" cx="80" cy="80" r="62"
+                  [class.donut-green]="rejectionRate <= 5"
+                  [class.donut-amber]="rejectionRate > 5 && rejectionRate <= 15"
+                  [class.donut-red]="rejectionRate > 15"
+                  [style.strokeDasharray]="(rejectionRate / 100 * 389.6) + ' 389.6'"/>
+              </svg>
+              <div class="mini-donut-center"
+                [class.val-green]="rejectionRate <= 5"
+                [class.val-amber]="rejectionRate > 5 && rejectionRate <= 15"
+                [class.val-red]="rejectionRate > 15">{{ rejectionRate }}%</div>
+            </div>
+            <div class="donut-metrics">
+              <div class="dmetric">
+                <span class="dmetric-val"
+                  [class.val-green]="rejectionRate <= 5"
+                  [class.val-amber]="rejectionRate > 5 && rejectionRate <= 15"
+                  [class.val-red]="rejectionRate > 15">{{ rejectionRate }}%</span>
+                <span class="dmetric-lbl">REJECTION RATE</span>
               </div>
-              <div class="hmi-err-info">
-                <div class="hmi-err-type">{{ log.errorType }}</div>
-                <div class="hmi-err-msg">{{ log.message }}</div>
-                <div class="hmi-err-action" *ngIf="log.suggestedAction">
-                  <mat-icon style="font-size:14px;width:14px;height:14px">tips_and_updates</mat-icon>
-                  {{ log.suggestedAction }}
-                </div>
+              <div class="dmetric">
+                <span class="dmetric-val val-cyan">{{ totalInspections > 0 ? (100 - rejectionRate) : 0 }}%</span>
+                <span class="dmetric-lbl">PASS RATE</span>
               </div>
-              <div class="hmi-err-meta">
-                <span class="hmi-err-ts">{{ log.timestamp | date:'HH:mm:ss · dd MMM' }}</span>
-                <span class="hmi-err-status" *ngIf="log.resolved">
-                  <mat-icon>check_circle</mat-icon> Resolved
-                </span>
-                <button class="hmi-err-ack-btn" *ngIf="!log.resolved"
-                  (click)="acknowledgeLog(log)"
-                  [disabled]="log.acknowledging"
-                  matTooltip="Acknowledge — mark as resolved">
-                  <mat-icon>done_all</mat-icon>
-                  {{ log.acknowledging ? '...' : 'ACK' }}
-                </button>
+              <div class="dmetric">
+                <span class="dmetric-val">{{ defectCount }} / {{ totalInspections }}</span>
+                <span class="dmetric-lbl">REJECTED / TOTAL</span>
               </div>
             </div>
           </div>
+          <span class="stat-label" style="margin-top:6px">DEFECT RATE</span>
+        </div>
 
-        </div><!-- /hmi-err-body -->
-      </div><!-- /hmi-error-section -->
+      </div><!-- /kpi-row -->
 
-    </div><!-- /hmi-col-right -->
 
-  </div><!-- /hmi-body -->
+      <!-- ── MAIN GRID ── -->
+      <div class="main-grid">
 
-  <!-- ══════════════════ DANGER ALERT BANNER ══════════════════ -->
-  <div class="hmi-danger-banner" *ngIf="dangerAlertActive">
-    <mat-icon class="hmi-danger-icon">error</mat-icon>
-    <div class="hmi-danger-text">
+        <!-- ═══ LEFT COLUMN: Camera | History + Inspection ═══ -->
+        <div class="left-col">
+
+          <!-- Camera Panel -->
+          <div class="panel camera-panel">
+            <div class="panel-label">
+              LIVE CAMERA FEED
+              <span class="fps-tag">{{ streamHealth.avg_fps > 0 ? (streamHealth.avg_fps | number:'1.0-1') : (fps > 0 ? fps : '0.0') }} FPS</span>
+            </div>
+            <div class="camera-box">
+              <span class="c-tl"></span><span class="c-tr"></span>
+              <span class="c-bl"></span><span class="c-br"></span>
+              <img class="stream-img" [src]="cameraStreamUrl" [class.hidden]="!streamActive"
+                (load)="onStreamLoad()" (error)="onStreamError()" alt="camera">
+              <div class="cam-placeholder" [class.hidden]="streamActive">
+                <mat-icon>videocam_off</mat-icon>
+                <span>{{ streamHealth.camera_status }}</span>
+                <span class="cam-sub">{{ streamHealth.status }}</span>
+              </div>
+              <div class="scanline"></div>
+              <div class="model-badge"
+                [class.badge-ok]="detectionStatus === 'NORMAL'"
+                [class.badge-nok]="detectionStatus === 'DEFECTIVE'">
+                <mat-icon *ngIf="detectionStatus === 'WAITING'">hourglass_empty</mat-icon>
+                <mat-icon *ngIf="detectionStatus === 'NORMAL'">check_circle</mat-icon>
+                <mat-icon *ngIf="detectionStatus === 'DEFECTIVE'">warning</mat-icon>
+                <span>{{ detectionStatus === 'NORMAL' ? 'CONFORMING' : detectionStatus }}</span>
+              </div>
+            </div>
+            <div class="cam-meta">
+              <div class="meta-cell">
+                <span class="meta-lbl">STREAM</span>
+                <span class="meta-val">{{ streamHealth.status === 'online' ? 'LIVE' : (streamHealth.status | uppercase) }}</span>
+              </div>
+              <div class="meta-cell">
+                <span class="meta-lbl">FRAMES</span>
+                <span class="meta-val">{{ streamHealth.frames_captured }}</span>
+              </div>
+              <div class="meta-cell">
+                <span class="meta-lbl">AVG FPS</span>
+                <span class="meta-val">{{ streamHealth.avg_fps > 0 ? (streamHealth.avg_fps | number:'1.0-1') : '0.0' }}</span>
+              </div>
+              <div class="meta-cell">
+                <span class="meta-lbl">FRAME AGE</span>
+                <span class="meta-val">{{ streamHealth.last_frame_age_sec }}s</span>
+              </div>
+            </div>
+          </div><!-- /camera-panel -->
+
+          <!-- History + Inspection stacked vertically -->
+          <div class="left-right-stack">
+
+            <!-- Detection History -->
+            <div class="panel history-panel">
+              <div class="panel-label">
+                DETECTION HISTORY
+                <span class="badge" *ngIf="inspections.length > 0">{{ inspections.length }}</span>
+              </div>
+              <div class="hist-dots">
+                <ng-container *ngIf="visibleInspections.length > 0">
+                  <span *ngFor="let item of visibleInspections" class="dot"
+                    [class.dot-ok]="item.label === 'ok'"
+                    [class.dot-nok]="item.label !== 'ok'"
+                    [title]="(item.label === 'ok' ? 'Conforming' : 'Defective') + ' · ' + (item.timestamp | date:'HH:mm:ss')">
+                  </span>
+                </ng-container>
+                <ng-container *ngIf="inspections.length === 0">
+                  <span *ngFor="let i of [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]"
+                    class="dot dot-empty"></span>
+                </ng-container>
+              </div>
+              <div class="hist-footer">
+                <div class="hist-legend">
+                  <span class="leg-item"><span class="leg-dot" style="background:#22c55e"></span>Conforming</span>
+                  <span class="leg-item"><span class="leg-dot" style="background:#ef4444"></span>Defective</span>
+                </div>
+                <div class="hist-pager" *ngIf="histTotalPages > 1">
+                  <button class="pager-btn" [disabled]="histPage === 1" (click)="histPage = histPage - 1">&#8249;</button>
+                  <span class="pager-info">{{ histPage }} / {{ histTotalPages }}</span>
+                  <button class="pager-btn" [disabled]="histPage === histTotalPages" (click)="histPage = histPage + 1">&#8250;</button>
+                </div>
+              </div>
+            </div><!-- /history-panel -->
+
+            <!-- Current Inspection -->
+            <div class="panel insp-panel">
+              <div class="panel-label">CURRENT INSPECTION</div>
+              <div class="insp-grid">
+
+                <!-- Result -->
+                <div class="insp-cell">
+                  <div class="insp-icon"
+                    [class.icon-ok]="detectionStatus === 'NORMAL'"
+                    [class.icon-nok]="detectionStatus === 'DEFECTIVE'">
+                    <mat-icon *ngIf="detectionStatus === 'WAITING'">hourglass_empty</mat-icon>
+                    <mat-icon *ngIf="detectionStatus === 'NORMAL'">check_circle</mat-icon>
+                    <mat-icon *ngIf="detectionStatus === 'DEFECTIVE'">cancel</mat-icon>
+                  </div>
+                  <div class="insp-cell-content">
+                    <span class="insp-val"
+                      [class.val-green]="detectionStatus === 'NORMAL'"
+                      [class.val-red]="detectionStatus === 'DEFECTIVE'">
+                      {{ detectionStatus === 'NORMAL' ? 'CONFORMING' : detectionStatus }}
+                    </span>
+                    <span class="insp-label">RESULT</span>
+                  </div>
+                </div>
+
+                <!-- AI Confidence gauge -->
+                <div class="insp-cell">
+                  <div class="insp-gauge-wrap">
+                    <svg class="insp-gauge-svg" viewBox="0 0 120 72">
+                      <path class="cg-track" d="M 12 66 A 48 48 0 0 1 108 66"/>
+                      <path class="cg-fill" d="M 12 66 A 48 48 0 0 1 108 66"
+                        [style.strokeDasharray]="(confidenceScore / 100 * 150.8) + ' 150.8'"
+                        [class.cg-green]="detectionStatus === 'NORMAL'"
+                        [class.cg-red]="detectionStatus === 'DEFECTIVE'"/>
+                    </svg>
+                    <div class="insp-gauge-num"
+                      [class.val-green]="detectionStatus === 'NORMAL'"
+                      [class.val-red]="detectionStatus === 'DEFECTIVE'">
+                      {{ detectionStatus !== 'WAITING' ? confidenceScore + '%' : '—' }}
+                    </div>
+                  </div>
+                  <span class="insp-label">AI CONFIDENCE</span>
+                </div>
+
+                <!-- Last Detected -->
+                <div class="insp-cell">
+                  <div class="insp-cell-content">
+                    <span class="insp-time">{{ lastDetectionTime }}</span>
+                    <span class="insp-label">LAST DETECTED</span>
+                    <span class="insp-date"
+                      [class.val-green]="lastDetectedDate !== 'missing'"
+                      [class.val-muted]="lastDetectedDate === 'missing'">
+                      {{ lastDetectedDate !== 'missing' ? lastDetectedDate : '— none —' }}
+                    </span>
+                    <span class="insp-label">EXPIRY DATE</span>
+                  </div>
+                </div>
+
+                <!-- Processing Time -->
+                <div class="insp-cell">
+                  <div class="insp-cell-content">
+                    <span class="insp-proc">{{ lastProcessingTime > 0 ? lastProcessingTime : '—' }}</span>
+                    <span class="insp-label">PROC TIME (s)</span>
+                  </div>
+                </div>
+
+              </div><!-- /insp-grid -->
+            </div><!-- /insp-panel -->
+
+          </div><!-- /left-right-stack -->
+
+        </div><!-- /left-col -->
+
+
+        <!-- ═══ RIGHT COLUMN: Robot + Error Logs ═══ -->
+        <div class="right-col">
+
+          <!-- Robot Controls -->
+          <div class="panel robot-panel">
+            <div class="panel-label">
+              ROBOT CONTROLS
+              <span class="robot-conn-badge"
+                [class.badge-connected]="isRobotConnected"
+                [class.badge-disconnected]="!isRobotConnected">
+                {{ isRobotConnected ? '● CONNECTED' : '● OFFLINE' }}
+              </span>
+            </div>
+
+            <div class="robot-status-strip">
+              <div class="rs-cell">
+                <span class="rs-lbl">TCP</span>
+                <span class="rs-val" [class.val-green]="isRobotConnected" [class.val-red]="!isRobotConnected">
+                  {{ isRobotConnected ? 'OK' : 'OFF' }}
+                </span>
+              </div>
+              <div class="rs-cell">
+                <span class="rs-lbl">STATE</span>
+                <span class="rs-val" [class.val-green]="isRobotConnected">{{ isRobotConnected ? 'IDLE' : '—' }}</span>
+              </div>
+              <div class="rs-cell">
+                <span class="rs-lbl">MODE</span>
+                <span class="rs-val"
+                  [class.val-amber]="freemotionActive"
+                  [class.val-cyan]="!freemotionActive && isRobotConnected">
+                  {{ freemotionActive ? 'FREE' : (isRobotConnected ? 'AUTO' : '—') }}
+                </span>
+              </div>
+              <div class="rs-cell">
+                <span class="rs-lbl">QUEUE</span>
+                <span class="rs-val" [class.val-amber]="robotQueueSize > 0">{{ isRobotConnected ? robotQueueSize : '—' }}</span>
+              </div>
+            </div>
+
+            <div class="robot-last-action">
+              <span class="rs-lbl">LAST ACTION</span>
+              <span class="rs-val rs-action-val">{{ isRobotConnected ? (robotLastAction || '—') : '—' }}</span>
+            </div>
+
+            <!-- Emergency Stop -->
+            <button class="estop-btn"
+              [disabled]="cmdLoading['emergency-stop']"
+              [class.estop-firing]="cmdLoading['emergency-stop']"
+              (click)="robotCommand('emergency-stop', 'EMERGENCY STOP — immediately halt all robot motion. Confirm?')">
+              <span class="estop-icon">&#9632;</span>
+              {{ cmdLoading['emergency-stop'] ? 'Stopping…' : 'EMERGENCY STOP' }}
+            </button>
+
+            <!-- Action buttons -->
+            <div class="robot-actions">
+              <button class="robot-action-btn btn-tool"
+                [disabled]="!isRobotConnected || cmdLoading['reboot-tool']"
+                (click)="robotCommand('reboot-tool', 'Reboot the tool / gripper?')">
+                <mat-icon>build_circle</mat-icon>
+                {{ cmdLoading['reboot-tool'] ? 'REBOOTING…' : 'REBOOT TOOL' }}
+              </button>
+              <button class="robot-action-btn btn-motors"
+                [disabled]="!isRobotConnected || cmdLoading['reboot-motors']"
+                (click)="robotCommand('reboot-motors', 'Reboot robot motors? The arm will briefly lose torque.')">
+                <mat-icon>restart_alt</mat-icon>
+                {{ cmdLoading['reboot-motors'] ? 'REBOOTING…' : 'REBOOT MOTORS' }}
+              </button>
+              <button class="robot-action-btn btn-calibrate"
+                [disabled]="cmdLoading['calibrate']"
+                (click)="robotCommand('calibrate', 'Start calibration? The arm will move through calibration positions.')">
+                <mat-icon>my_location</mat-icon>
+                {{ cmdLoading['calibrate'] ? 'CALIBRATING…' : 'CALIBRATION' }}
+              </button>
+            </div>
+
+            <div class="action-fb" *ngIf="actionMessage"
+              [class.fb-ok]="actionSuccess" [class.fb-err]="!actionSuccess">
+              <mat-icon>{{ actionSuccess ? 'check_circle' : 'error' }}</mat-icon>
+              {{ actionMessage }}
+            </div>
+          </div><!-- /robot-panel -->
+
+          <!-- Reset Session -->
+          <button class="reset-btn" (click)="resetSession()">
+            <mat-icon>restart_alt</mat-icon>RESET SESSION
+          </button>
+
+          <!-- Error Logs -->
+          <div class="error-section">
+
+            <div class="err-header" (click)="errorLogsExpanded = !errorLogsExpanded">
+              <mat-icon class="err-icon">bug_report</mat-icon>
+              <span class="err-title">ERROR LOGS &amp; ALERTS</span>
+              <span class="err-count" *ngIf="errorLogs.length > 0">{{ errorLogs.length }}</span>
+              <div class="err-actions" (click)="$event.stopPropagation()">
+                <button class="err-btn" (click)="toggleShowResolved()"
+                  [matTooltip]="showResolvedLogs ? 'Hide resolved' : 'Show resolved'">
+                  <mat-icon>{{ showResolvedLogs ? 'visibility_off' : 'visibility' }}</mat-icon>
+                </button>
+                <button class="err-btn" (click)="loadErrorLogs()" matTooltip="Refresh logs">
+                  <mat-icon>refresh</mat-icon>
+                </button>
+              </div>
+              <mat-icon class="err-chevron">{{ errorLogsExpanded ? 'expand_less' : 'expand_more' }}</mat-icon>
+            </div>
+
+            <div class="err-body" *ngIf="errorLogsExpanded">
+
+              <div class="err-loading" *ngIf="errorLogsLoading">
+                <mat-icon class="spin-icon">autorenew</mat-icon> Loading logs...
+              </div>
+
+              <div class="err-empty" *ngIf="!errorLogsLoading && errorLogs.length === 0">
+                <mat-icon>check_circle</mat-icon>
+                <span>No active alerts — system nominal</span>
+              </div>
+
+              <div class="err-list" *ngIf="!errorLogsLoading && errorLogs.length > 0">
+                <div *ngFor="let log of errorLogs" class="err-row"
+                  [ngClass]="severityColor(log.severity)"
+                  [class.err-resolved]="log.resolved">
+                  <div class="err-sev">
+                    <mat-icon>{{ log.severity === 'critical' ? 'dangerous' : log.severity === 'error' ? 'error' : 'warning' }}</mat-icon>
+                    <span>{{ log.severity | uppercase }}</span>
+                  </div>
+                  <div class="err-info">
+                    <div class="err-type">{{ log.errorType }}</div>
+                    <div class="err-msg">{{ log.message }}</div>
+                    <div class="err-action" *ngIf="log.suggestedAction">
+                      <mat-icon style="font-size:14px;width:14px;height:14px">tips_and_updates</mat-icon>
+                      {{ log.suggestedAction }}
+                    </div>
+                  </div>
+                  <div class="err-meta">
+                    <span class="err-ts">{{ log.timestamp | date:'HH:mm:ss · dd MMM' }}</span>
+                    <span class="err-status" *ngIf="log.resolved">
+                      <mat-icon>check_circle</mat-icon> Resolved
+                    </span>
+                    <button class="err-ack-btn" *ngIf="!log.resolved"
+                      (click)="acknowledgeLog(log)"
+                      [disabled]="log.acknowledging"
+                      matTooltip="Acknowledge — mark as resolved">
+                      <mat-icon>done_all</mat-icon>
+                      {{ log.acknowledging ? '...' : 'ACK' }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+            </div><!-- /err-body -->
+
+          </div><!-- /error-section -->
+
+        </div><!-- /right-col -->
+
+      </div><!-- /main-grid -->
+
+    </div><!-- /content-area -->
+
+  </div><!-- /main-area -->
+
+
+  <!-- DANGER ALERT BANNER -->
+  <div class="danger-banner" *ngIf="dangerAlertActive">
+    <mat-icon class="danger-icon">error</mat-icon>
+    <div class="danger-text">
       <strong>DANGER ALERT</strong>
       <span>{{ dangerAlertMessage }}</span>
     </div>
-    <button class="hmi-danger-dismiss" (click)="dismissDangerBanner()">
+    <button class="danger-dismiss" (click)="dismissDangerBanner()">
       <mat-icon>close</mat-icon>
     </button>
   </div>
