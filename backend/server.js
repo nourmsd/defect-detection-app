@@ -53,25 +53,12 @@ const DANGER_COOLDOWN_MS = 5 * 60 * 1000;
 /* ===================== PYTHON ===================== */
 
 function buildBundledPythonEnv(extraEnv = {}) {
-  const bundledSitePackages = path.join(__dirname, 'niryo_env', 'Lib', 'site-packages');
-  const mergedPythonPath = process.env.PYTHONPATH
-    ? `${bundledSitePackages}${path.delimiter}${process.env.PYTHONPATH}`
-    : bundledSitePackages;
-
-  return {
-    ...process.env,
-    PYTHONPATH: mergedPythonPath,
-    ...extraEnv,
-  };
+  return { ...process.env, ...extraEnv };
 }
 
 function resolvePythonCommand() {
-  const localPython = path.join(__dirname, 'niryo_env', 'Scripts', 'python.exe');
-  if (fs.existsSync(localPython)) {
-    console.log("[Python] Using venv:", localPython);
-    return { command: localPython, args: [] };
-  }
-  throw new Error("Venv Python not found. Please recreate niryo_env with Python 3.10");
+  console.log("[Python] Using system python");
+  return { command: 'python', args: [] };
 }
 
 /* ===================== HELPERS ===================== */
@@ -206,63 +193,16 @@ async function handlePipelineStructuredEvent(msg, io) {
 /* ===================== STREAM ===================== */
 
 async function startNiryoStreamService() {
-  if (streamProc && !streamProc.killed) return;
-
-  // If already started externally, don't spawn a duplicate stream service.
-  try {
-    const { response, data } = await fetchJsonWithTimeout(`${NIRYO_STREAM_URL}/health`, {}, 2500);
-    const looksLikeStreamService =
-      Boolean(response?.ok) &&
-      data &&
-      typeof data === 'object' &&
-      (
-        Object.prototype.hasOwnProperty.call(data, 'robot_connected') ||
-        Object.prototype.hasOwnProperty.call(data, 'avg_fps') ||
-        Object.prototype.hasOwnProperty.call(data, 'stream_stale')
-      );
-    if (looksLikeStreamService) {
-      console.log('[niryo-stream] service already running — reusing existing process');
-      return;
-    }
-  } catch {
-    // ignore probe errors — we'll attempt to spawn below
-  }
-
-  const script = path.join(__dirname, 'niryo_stream.py');
-  let cmd;
-  try {
-    cmd = resolvePythonCommand();
-  } catch (e) {
-    console.warn('[niryo-stream] Python venv not found — stream service disabled:', e.message);
-    return;
-  }
-  try {
-    streamProc = spawn(cmd.command, [...cmd.args, '-u', script], {
-      cwd: __dirname,
-      env: buildBundledPythonEnv(),
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const _healthPattern = /GET \/(health|robot-health)/;
-    streamProc.stdout.on('data', (d) => {
-      d.toString().split('\n').forEach((line) => {
-        const l = line.trim();
-        if (l && !_healthPattern.test(l)) console.log(`[niryo-stream] ${l}`);
-      });
-    });
-    streamProc.stderr.on('data', (d) => {
-      d.toString().split('\n').forEach((line) => {
-        const l = line.trim();
-        if (l && !_healthPattern.test(l)) console.log(`[niryo-stream] ${l}`);
-      });
-    });
-    streamProc.on('exit', (code) => {
-      console.warn(`[niryo-stream] exited with code ${code} — will restart in 5s`);
-      streamProc = null;
-      setTimeout(startNiryoStreamService, 5000);
-    });
-  } catch (e) {
-    console.warn('[niryo-stream] spawn failed:', e.message);
-  }
+  // OBSOLETE: niryo_stream.py used to be a separate process holding its own
+  // pyniryo connection just to serve the camera MJPEG. After the merge into
+  // app.py (which now serves /stream on :5001 itself using the same single
+  // NiryoRobot connection it already holds for motion control), spawning
+  // niryo_stream.py creates a SECOND TCP connection to robot port 40001.
+  // The arm only allows one connection — the two processes kick each other
+  // out in a loop, which is what your "utf-8 codec can't decode byte 0xab"
+  // error and the "Disconnected from robot / Connecting to robot" ping-pong
+  // were showing. This function is now a no-op.
+  return;
 }
 
 async function startNiryoPickPlaceService() {
@@ -289,7 +229,7 @@ async function startNiryoPickPlaceService() {
     // ignore probe errors — we'll attempt to spawn below
   }
 
-  const script = path.join(__dirname, 'niryo_pick_place.py');
+  const script = path.join(__dirname, 'app.py');
   let cmd;
   try {
     cmd = resolvePythonCommand();
@@ -307,9 +247,21 @@ async function startNiryoPickPlaceService() {
 
     const _healthPattern = /GET \/(status|health)/;
     pickPlaceProc.stdout.on('data', (d) => {
-      d.toString().split('\n').forEach((line) => {
-        const l = line.trim();
-        if (l && !_healthPattern.test(l)) console.log(`[niryo-pick-place] ${l}`);
+      d.toString().split('\n').forEach((raw) => {
+        const l = raw.trim();
+        if (!l) return;
+        // SOCKET_EVENT lines are structured pipeline events emitted by app.py
+        // (inspections, pipeline-state updates). Parse + persist + broadcast.
+        if (l.startsWith(PIPELINE_EVENT_PREFIX)) {
+          try {
+            const json = JSON.parse(l.replace(PIPELINE_EVENT_PREFIX, ''));
+            handlePipelineStructuredEvent(json, globalSocketServer);
+          } catch (e) {
+            console.warn('[niryo-pick-place] bad json:', l.slice(0, 120));
+          }
+          return;
+        }
+        if (!_healthPattern.test(l)) console.log(`[niryo-pick-place] ${l}`);
       });
     });
     pickPlaceProc.stderr.on('data', (d) => {
@@ -331,7 +283,15 @@ async function startNiryoPickPlaceService() {
 /* ===================== AI PIPELINE ===================== */
 
 function startAIPipeline(io) {
+  // OBSOLETE: the AI pipeline is now part of app.py (spawned by
+  // startNiryoPickPlaceService). The standalone niryo_live_expiry_app.py no
+  // longer exists. We keep this function as a no-op so existing call sites
+  // don't break, and so SOCKET_EVENTs from app.py still reach the dashboard
+  // (we cache the io reference here for handlePipelineStructuredEvent).
   globalSocketServer = io;
+  return;
+
+  // eslint-disable-next-line no-unreachable
   if (aiProc && !aiProc.killed) return;
 
   // Hard prerequisite: robot must be connected before starting inference
