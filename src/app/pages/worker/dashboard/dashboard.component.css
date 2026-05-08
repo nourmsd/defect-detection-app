@@ -861,6 +861,57 @@
   .hmi-donut-metrics { grid-template-columns: repeat(3, 1fr); }
 }
 
+/* ══════════════════════════════════════════════════════
+   RIGHT COLUMN — ERROR LOGS (fits narrow col)
+══════════════════════════════════════════════════════ */
+
+/* Let the section grow to fill remaining right-col space */
+.hmi-col-right .hmi-error-section {
+  margin: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Body scrolls inside the flex container */
+.hmi-col-right .hmi-err-body {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+
+/* Compact header for narrow column */
+.hmi-col-right .hmi-err-header {
+  padding: 8px 10px;
+  gap: 7px;
+}
+
+/* Icon-only action buttons — hide text labels */
+.hmi-col-right .hmi-err-actions .hmi-err-btn span { display: none; }
+.hmi-col-right .hmi-err-btn { padding: 4px 6px; }
+
+/* Compact log rows */
+.hmi-col-right .hmi-err-row {
+  padding: 10px 10px;
+  gap: 8px;
+}
+
+/* Severity col narrower */
+.hmi-col-right .hmi-err-sev { min-width: 42px; font-size: 9px; }
+.hmi-col-right .hmi-err-sev mat-icon { font-size: 16px; }
+
+/* Meta col narrower */
+.hmi-col-right .hmi-err-meta { min-width: 0; }
+.hmi-col-right .hmi-err-ts { font-size: 9px; white-space: normal; word-break: break-word; }
+.hmi-col-right .hmi-err-ack-btn { font-size: 10px; padding: 3px 7px; }
+
+/* Text sizes */
+.hmi-col-right .hmi-err-type { font-size: 11px; }
+.hmi-col-right .hmi-err-msg  { font-size: 11px; }
+
 /* ═══════════════════════════════════════════════════════════════
    ERROR LOGS / ALERTS SECTION + DANGER BANNER
 ═══════════════════════════════════════════════════════════════ */
