@@ -84,9 +84,10 @@
         <tr>
           <th>#ID</th>
           <th>Date &amp; Time</th>
-          <th>Device</th>
+          <th>Flavor</th>
           <th>Expiry Date</th>
           <th>Result</th>
+          <th>Defect</th>
           <th>Confidence</th>
           <th>Actions</th>
         </tr>
@@ -97,25 +98,31 @@
             class="hist-row">
           <td class="col-id">{{ getShortId(item.id) }}</td>
           <td class="col-time">{{ item.timestamp | date:'dd MMM yyyy, HH:mm:ss' }}</td>
-          <td class="col-device">{{ item.device || 'Niryo Camera' }}</td>
+          <td class="col-device">{{ item.flavor || '—' }}</td>
           <td class="col-date">
-            <span [class.date-read]="item.detected_date && item.detected_date !== 'missing'"
-                  [class.date-missing]="!item.detected_date || item.detected_date === 'missing'">
-              {{ (item.detected_date && item.detected_date !== 'missing') ? item.detected_date : '—' }}
+            <span [class.date-read]="item.expiry_date && item.expiry_date !== 'missing'"
+                  [class.date-missing]="!item.expiry_date || item.expiry_date === 'missing'">
+              {{ (item.expiry_date && item.expiry_date !== 'missing') ? item.expiry_date : '—' }}
             </span>
           </td>
           <td>
-            <span class="result-tag" [class.tag-pass]="item.label === 'OK'" [class.tag-fail]="item.label !== 'OK'">
-              {{ item.label === 'OK' ? 'PASS' : 'FAIL' }}
+            <span class="result-tag" [class.tag-pass]="item.label === 'ok'" [class.tag-fail]="item.label !== 'ok'">
+              {{ item.label === 'ok' ? 'PASS' : 'FAIL' }}
             </span>
+          </td>
+          <td>
+            <span *ngIf="item.defect_type" class="defect-tag defect-{{item.defect_type}}">
+              {{ item.defect_type | uppercase }}
+            </span>
+            <span *ngIf="!item.defect_type">—</span>
           </td>
           <td class="col-conf">
             <div class="conf-bar-wrap">
               <div class="conf-bar">
                 <div class="conf-fill"
                      [style.width.%]="normaliseConfidence(item.confidence)"
-                     [class.fill-green]="item.label === 'OK'"
-                     [class.fill-red]="item.label !== 'OK'">
+                     [class.fill-green]="item.label === 'ok'"
+                     [class.fill-red]="item.label !== 'ok'">
                 </div>
               </div>
               <span class="conf-val">{{ normaliseConfidence(item.confidence) }}%</span>
@@ -157,8 +164,8 @@
       </button>
     </div>
     <div class="drawer-body" *ngIf="selectedInspection">
-      <div class="drawer-verdict" [class.verdict-pass]="selectedInspection.label === 'OK'" [class.verdict-fail]="selectedInspection.label !== 'OK'">
-        {{ selectedInspection.label === 'OK' ? 'PASS' : 'FAIL' }}
+      <div class="drawer-verdict" [class.verdict-pass]="selectedInspection.label === 'ok'" [class.verdict-fail]="selectedInspection.label !== 'ok'">
+        {{ selectedInspection.label === 'ok' ? 'PASS' : 'FAIL' }}
       </div>
 
       <div class="drawer-fields">
@@ -171,15 +178,21 @@
           <span class="df-value">{{ selectedInspection.timestamp | date:'dd MMMM yyyy, HH:mm:ss' }}</span>
         </div>
         <div class="drawer-field">
-          <span class="df-label">Device</span>
-          <span class="df-value">{{ selectedInspection.device || 'Camera 1' }}</span>
+          <span class="df-label">Flavor</span>
+          <span class="df-value">{{ selectedInspection.flavor || 'missing' }}</span>
         </div>
         <div class="drawer-field">
           <span class="df-label">Expiry Date Read</span>
           <span class="df-value"
-            [class.df-highlight]="selectedInspection.detected_date && selectedInspection.detected_date !== 'missing'"
-            [class.df-missing]="!selectedInspection.detected_date || selectedInspection.detected_date === 'missing'">
-            {{ (selectedInspection.detected_date && selectedInspection.detected_date !== 'missing') ? selectedInspection.detected_date : 'missing' }}
+            [class.df-highlight]="selectedInspection.expiry_date && selectedInspection.expiry_date !== 'missing'"
+            [class.df-missing]="!selectedInspection.expiry_date || selectedInspection.expiry_date === 'missing'">
+            {{ (selectedInspection.expiry_date && selectedInspection.expiry_date !== 'missing') ? selectedInspection.expiry_date : 'missing' }}
+          </span>
+        </div>
+        <div class="drawer-field" *ngIf="selectedInspection.defect_type">
+          <span class="df-label">Defect Type</span>
+          <span class="df-value defect-tag defect-{{selectedInspection.defect_type}}">
+            {{ selectedInspection.defect_type | uppercase }}
           </span>
         </div>
         <div class="drawer-field">

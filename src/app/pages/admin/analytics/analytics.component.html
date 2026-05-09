@@ -114,6 +114,47 @@
         <div class="kpi-big-val">{{ kpis.defective | number }}</div>
         <div class="kpi-label-text">Total Defective</div>
       </div>
+
+      <div class="an-kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-icon-wrap kpi-icon-slate"><mat-icon>visibility_off</mat-icon></span>
+        </div>
+        <div class="kpi-big-val">{{ kpis.absent | number }}</div>
+        <div class="kpi-label-text">Absent (no bbox)</div>
+      </div>
+
+      <div class="an-kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-icon-wrap kpi-icon-amber"><mat-icon>blur_on</mat-icon></span>
+        </div>
+        <div class="kpi-big-val">{{ kpis.blurry | number }}</div>
+        <div class="kpi-label-text">Blurry / Unreadable</div>
+      </div>
+
+      <div class="an-kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-icon-wrap kpi-icon-red"><mat-icon>schedule</mat-icon></span>
+        </div>
+        <div class="kpi-big-val">{{ kpis.expired | number }}</div>
+        <div class="kpi-label-text">Expired</div>
+      </div>
+
+      <div class="an-kpi-card"
+           matTooltip="Mean Time Between Failures — average time from a robot error log to the next robot fix">
+        <div class="kpi-header">
+          <span class="kpi-icon-wrap kpi-icon-cyan"><mat-icon>build_circle</mat-icon></span>
+        </div>
+        <div class="kpi-big-val">{{ kpis.MTBF | number:'1.0-1' }}<span class="kpi-unit">h</span></div>
+        <div class="kpi-label-text">MTBF (error → fix)</div>
+      </div>
+
+      <div class="an-kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-icon-wrap kpi-icon-green"><mat-icon>timer</mat-icon></span>
+        </div>
+        <div class="kpi-big-val">{{ kpis.avgProcessingTime | number:'1.0-2' }}<span class="kpi-unit">s</span></div>
+        <div class="kpi-label-text">Avg Processing Time</div>
+      </div>
     </div>
 
     <!-- CHARTS ROW 1 -->
@@ -161,7 +202,7 @@
       <div class="an-chart-card an-chart-half">
         <div class="chart-title">
           <mat-icon>view_list</mat-icon>
-          <span>Defect Source Breakdown</span>
+          <span>Defect Type Breakdown</span>
         </div>
         <div class="chart-canvas-wrap">
           <canvas baseChart [data]="barChartData" [options]="barChartOptions" [type]="'bar'"></canvas>

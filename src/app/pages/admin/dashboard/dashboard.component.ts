@@ -106,11 +106,16 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
         const { type, payload } = event;
 
         if (type === 'inspection') {
+          const p = payload as any;
           this.lastInspection = {
-            label: (payload as any).label === 'defective' ? 'defective' : 'OK',
-            confidence: (payload as any).confidence,
-            timestamp: (payload as any).timestamp,
-            processing_time: (payload as any).processing_time
+            id: p.id,
+            label: p.label === 'defective' ? 'defective' : 'ok',
+            defect_type: p.defect_type ?? null,
+            flavor: p.flavor || 'missing',
+            expiry_date: p.expiry_date || p.detected_date || 'missing',
+            confidence: p.confidence,
+            timestamp: p.timestamp,
+            processing_time: p.processing_time
           };
           this.fetchStats();
           this.systemHealth.ai = 'online';

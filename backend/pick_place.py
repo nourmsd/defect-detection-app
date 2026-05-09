@@ -1,88 +1,115 @@
-#!/usr/bin/env python3
+from pyniryo import NiryoRobot, PoseObject
+import time
 
-import rospy
-import actionlib
-from control_msgs.msg import FollowJointTrajectoryAction, FollowJointTrajectoryGoal
-from trajectory_msgs.msg import JointTrajectoryPoint
+# ═══════════════════════════════════════════════════════════════════════════════
+# ROBOT CONFIG
+# ═══════════════════════════════════════════════════════════════════════════════
+ROBOT_IP = "10.10.10.10"  # Ensure this matches your robot's IP
 
-# =========================
-# JOINT POSITIONS
-# =========================
-HOME = [0.09, 0.61, -1.34, 0.09, -0.08, 0.08]
-READ = [0.16, -0.34, -0.75, 0.16, -0.57, 0.09]
-GRAB = [0.15, -0.61, -0.42, 0.03, -0.51, 0.12]
-PATH = [1.15, 0.20, -0.66, 0.05, -0.47, 0.07]
-BIN  = [1.75, -0.39, -0.12, -0.03, -0.74, 0.12]
+# ═══════════════════════════════════════════════════════════════════════════════
+# POSES
+# ═══════════════════════════════════════════════════════════════════════════════
+INSPECTION_POSE = PoseObject(
+    x=0.244, y=0.022, z=0.191,
+    roll=-2.796, pitch=1.463, yaw=-2.891
+)
 
-JOINT_NAMES = [
-    "joint_1",
-    "joint_2",
-    "joint_3",
-    "joint_4",
-    "joint_5",
-    "joint_6"
-]
+PICK_POSE = PoseObject(
+    x=0.295, y=0.05, z=0.137,
+    roll=-3.036, pitch=1.525, yaw=-3.087
+)
 
-class PickPlace:
-    def __init__(self):
-        rospy.init_node("simple_pick_place")
+INTER_POSE1 = PoseObject(
+    x=0.228, y=0.039, z=0.241, 
+    roll=2.916, pitch=1.505, yaw=2.951
+)
 
-        self.client = actionlib.SimpleActionClient(
-            "/niryo_robot_follow_joint_trajectory_controller/follow_joint_trajectory",
-            FollowJointTrajectoryAction
-        )
+INTER_POSE2 = PoseObject(
+    x=-0.004, y=0.255, z=0.285, 
+    roll=-0.43, pitch=1.428, yaw=1.082
+)
 
-        rospy.loginfo("Waiting for trajectory controller...")
-        self.client.wait_for_server()
-        rospy.loginfo("Connected to controller")
+REJECT_BIN_POSE = PoseObject(
+    x=-0.036, y=0.365, z=0.177, 
+    roll=-0.055, pitch=1.407, yaw=1.521
+)
 
-    def move(self, joints, duration=3.0):
-        goal = FollowJointTrajectoryGoal()
+# ═══════════════════════════════════════════════════════════════════════════════
+# RECOVERY LOGIC
+# ═══════════════════════════════════════════════════════════════════════════════
+def reset_gripper(robot):
+    """Resets the tool connection to fix stalling/partial opening."""
+    print("[FIX] Resetting Gripper connection...")
+    # This force-refreshes the tool recognition
+    robot.update_tool() 
+    time.sleep(1.0)
+    # Move to full open position specifically
+    robot.open_gripper(speed=500) 
+    print("[FIX] Gripper recalibrated.")
+# ═══════════════════════════════════════════════════════════════════════════════
+# TEST FUNCTION
+# ═══════════════════════════════════════════════════════════════════════════════
 
-        goal.trajectory.joint_names = JOINT_NAMES
+def perform_reject_action(robot):
+    print("[ROBOT] Starting Pick & Place for Reject...")
+    reset_gripper(robot)
 
-        point = JointTrajectoryPoint()
-        point.positions = joints
-        point.time_from_start = rospy.Duration(duration)
+    # 1. Prepare to pick
+    print("Moving to PICK_POSE...")
+    robot.move_pose(PICK_POSE)
+    time.sleep(0.5)
+    
+    # 2. Grab the object
+    print("Grasping...")
+    robot.grasp_with_tool()
+    time.sleep(0.5) # Small pause to ensure grip is firm
+    
+    # 3. Path to Bin (Intermediate steps to avoid collisions)
+    print("Moving through intermediate poses...")
+    robot.move_pose(INTER_POSE1)
+    robot.move_pose(INTER_POSE2)
+    
+    # 4. Drop in Bin
+    print("Moving to REJECT_BIN_POSE...")
+    robot.move_pose(REJECT_BIN_POSE)
+    robot.release_with_tool()
+    robot.open_gripper(speed=500)
+    time.sleep(0.5)
+    
+    # 5. Return Path
+    print("Returning to inspection pose...")
+    robot.move_pose(INTER_POSE2)
+    robot.move_pose(INTER_POSE1)
+    robot.move_pose(INSPECTION_POSE)
+    
+    print("[ROBOT] Test Cycle Complete.")
 
-        goal.trajectory.points.append(point)
-
-        self.client.send_goal(goal)
-        self.client.wait_for_result()
-
-    def run(self):
-        rospy.loginfo("Moving to HOME")
-        self.move(HOME)
-
-        rospy.sleep(1)
-
-        rospy.loginfo("Moving to READ")
-        self.move(READ)
-
-        rospy.sleep(1)
-
-        rospy.loginfo("Moving to GRAB")
-        self.move(GRAB)
-
-        rospy.sleep(1)
-
-        rospy.loginfo("Moving to PATH")
-        self.move(PATH)
-
-        rospy.sleep(1)
-
-        rospy.loginfo("Moving to BIN")
-        self.move(BIN)
-
-        rospy.sleep(1)
-
-        rospy.loginfo("Returning HOME")
-        self.move(HOME)
-
+# ═══════════════════════════════════════════════════════════════════════════════
+# EXECUTION
+# ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     try:
-        robot = PickPlace()
-        robot.run()
-    except rospy.ROSInterruptException:
-        pass
+        # Initialize connection
+        print(f"Connecting to robot at {ROBOT_IP}...")
+        robot = NiryoRobot(ROBOT_IP)
+        
+        # Calibration is necessary after power-on
+        print("Calibrating...")
+        robot.calibrate_auto()
+        robot.update_tool()
+        
+        # Start at the inspection point
+        print("Moving to initial Inspection Pose...")
+        robot.move_pose(INSPECTION_POSE)
+        
+        # Run the move logic
+        perform_reject_action(robot)
+        
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        # Clean shutdown
+        if 'robot' in locals():
+            robot.close_connection()
+            print("Connection closed.")

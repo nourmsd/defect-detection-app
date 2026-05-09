@@ -6,10 +6,6 @@ const {
   receiveActionResult,
   enableFreemotion,
   disableFreemotion,
-  getCurrentJoints,
-  savePosition,
-  getPositions,
-  deletePosition,
   rebootTool,
   rebootMotors,
   calibrate,
@@ -25,11 +21,6 @@ router.use(authMiddleware);
 router.get('/status',             getRobotStatus);
 router.post('/freemotion/enable', enableFreemotion);
 router.post('/freemotion/disable',disableFreemotion);
-router.get('/current-joints',     getCurrentJoints);
-
-router.get('/positions',          getPositions);
-router.post('/positions',         savePosition);
-router.delete('/positions/:id',   deletePosition);
 
 router.post('/reboot-tool',       rebootTool);
 router.post('/reboot-motors',     rebootMotors);

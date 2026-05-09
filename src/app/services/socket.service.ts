@@ -6,9 +6,11 @@ import { environment } from '../../environments/environment';
 export interface InspectionSocketPayload {
   id: string;
   label: string;
+  defect_type?: 'absent' | 'blurry' | 'expired' | null;
+  flavor?: string;
+  expiry_date: string;
   confidence: number;
   processing_time: number;
-  detected_date: string;
   timestamp: string;
 }
 

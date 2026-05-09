@@ -29,9 +29,10 @@ export class AnalyticsComponent implements OnInit, OnDestroy {
     passRate: 0,
     avgConfidence: 0,
     defective: 0,
+    absent: 0,
+    blurry: 0,
+    expired: 0,
     MTBF: 0,
-    MTTR: 0,
-    availability: 0,
     avgProcessingTime: 0,
     trends: {
       totalChange: null as number | null,
@@ -141,15 +142,19 @@ export class AnalyticsComponent implements OnInit, OnDestroy {
       next: (data: any) => {
         try {
           const kpis = data?.kpis || {};
+          const breakdown: any[] = data?.defectTypeBreakdown || [];
+          const defectCount = (id: string) =>
+            breakdown.find(d => d?._id === id)?.count ?? 0;
           this.kpis = {
             totalInspections: kpis.totalInspections ?? 0,
             passRate:          kpis.passRate    != null ? Number(kpis.passRate.toFixed(1))    : 0,
             avgConfidence:     kpis.avgConfidence != null ? Number(kpis.avgConfidence.toFixed(1)) : 0,
             defective:         kpis.defective    ?? 0,
-            MTBF:              kpis.MTBF         ?? 0,
-            MTTR:              kpis.MTTR         ?? 0,
-            availability:      kpis.availability ?? 0,
-            avgProcessingTime: kpis.avgProcessingTime ?? 0,
+            absent:            defectCount('absent'),
+            blurry:            defectCount('blurry'),
+            expired:           defectCount('expired'),
+            MTBF:              kpis.MTBF != null ? Number(Number(kpis.MTBF).toFixed(1)) : 0,
+            avgProcessingTime: kpis.avgProcessingTime != null ? Number(Number(kpis.avgProcessingTime).toFixed(2)) : 0,
             trends: { totalChange: null, passRateChange: null, confidenceChange: null }
           };
 
@@ -279,11 +284,23 @@ export class AnalyticsComponent implements OnInit, OnDestroy {
       return;
     }
 
+    const friendly: Record<string, string> = {
+      absent:  'Absent (no bbox)',
+      blurry:  'Blurry / unreadable',
+      expired: 'Expired',
+      unknown: 'Unknown',
+    };
+    const palette: Record<string, string> = {
+      absent:  'rgba(148, 163, 184, 0.55)',  // slate
+      blurry:  'rgba(245, 158, 11, 0.55)',   // amber
+      expired: 'rgba(239, 68, 68, 0.55)',    // red
+      unknown: 'rgba(100, 116, 139, 0.45)',
+    };
     this.barChartData = {
-      labels: breakdown.map(d => d._id || 'Unknown Source'),
+      labels: breakdown.map(d => friendly[d._id] || (d._id || 'Unknown')),
       datasets: [{
         data: breakdown.map(d => d.count ?? 0),
-        backgroundColor: 'rgba(239, 68, 68, 0.5)',
+        backgroundColor: breakdown.map(d => palette[d._id] || 'rgba(239, 68, 68, 0.5)'),
         borderColor: '#ef4444',
         borderWidth: 1,
         borderRadius: 3

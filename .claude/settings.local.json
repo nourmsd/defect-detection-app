@@ -38,7 +38,21 @@
       "Read(//c/Users/nourm/OneDrive/Desktop/P/Stage_PFE/**)",
       "Read(//c/Users/nourm/OneDrive/Desktop/P/Stage_PFE//**)",
       "Bash(grep -E \"\\\\.\\(js|ts\\)$\")",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(grep \"\\\\.py$\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(python -c ' *)",
+      "PowerShell(Get-Process node -ErrorAction SilentlyContinue)",
+      "Bash(npm run *)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(netstat -ano)",
+      "Bash(findstr :4200)",
+      "Bash(curl -s http://localhost:4200/)",
+      "Bash(findstr LISTENING)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} | time %{time_total}s\\\\n\" http://localhost:5000/api/auth/health)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} | time %{time_total}s\\\\n\" http://localhost:5000/)"
     ]
   }
 }

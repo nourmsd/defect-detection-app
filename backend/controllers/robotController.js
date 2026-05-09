@@ -4,11 +4,8 @@
  * Handles:
  *   – Forwarding inspection results to niryo_pick_place.py
  *   – Free-motion toggle  (enable / disable learning mode on the arm)
- *   – Reading live joint positions from the arm
- *   – CRUD for named saved joint positions (persisted in MongoDB)
  */
 
-const RobotPosition = require('../models/RobotPosition');
 const { emitSocketEvent } = require('../utils/socketEvents');
 const { createErrorLog } = require('./systemController');
 
@@ -113,8 +110,6 @@ async function getRobotStatus(req, res) {
   } catch {
     res.json({
       robot_connected:   false,
-      robot_busy:        false,
-      freemotion_active: false,
       last_action:       'offline',
       queue_size:        0,
     });
@@ -149,7 +144,7 @@ async function enableFreemotion(req, res) {
   try {
     const { ok, data } = await robotFetch('/freemotion/enable', { method: 'POST' });
     if (!ok) {
-      return res.status(data.error === 'robot_busy' ? 409 : 503).json({
+      return res.status(503).json({
         success: false,
         message: data.error || 'Robot service error',
       });
@@ -169,74 +164,6 @@ async function disableFreemotion(req, res) {
     res.json({ success: true, freemotion: false });
   } catch (err) {
     res.status(503).json({ success: false, message: err.message });
-  }
-}
-
-/* ─────────────────────────────────────────────────────────────────────────
-   GET CURRENT JOINTS (live read from arm)
-───────────────────────────────────────────────────────────────────────── */
-
-async function getCurrentJoints(req, res) {
-  try {
-    const { ok, data } = await robotFetch('/current-joints');
-    if (!ok) {
-      return res.status(503).json({ success: false, message: data.error || 'Robot service error' });
-    }
-    res.json({ success: true, joints: data.joints });
-  } catch (err) {
-    res.status(503).json({ success: false, message: err.message });
-  }
-}
-
-/* ─────────────────────────────────────────────────────────────────────────
-   SAVED POSITIONS  (MongoDB CRUD)
-───────────────────────────────────────────────────────────────────────── */
-
-async function savePosition(req, res) {
-  const { name } = req.body || {};
-
-  if (!name || !String(name).trim()) {
-    return res.status(400).json({ success: false, message: 'Position name is required' });
-  }
-
-  // Read live joints from the arm
-  let joints;
-  try {
-    const { ok, data } = await robotFetch('/current-joints');
-    if (!ok || !Array.isArray(data.joints)) {
-      return res.status(503).json({ success: false, message: data.error || 'Cannot read joints from robot' });
-    }
-    joints = data.joints;
-  } catch (err) {
-    return res.status(503).json({ success: false, message: err.message });
-  }
-
-  try {
-    const saved = await RobotPosition.create({ name: String(name).trim(), joints });
-    console.log(`[robot] position saved: "${saved.name}" = [${joints.map(j => j.toFixed(3)).join(', ')}]`);
-    res.status(201).json({ success: true, position: saved });
-  } catch (err) {
-    console.error('[robot] DB save error:', err);
-    res.status(500).json({ success: false, message: 'Database error' });
-  }
-}
-
-async function getPositions(req, res) {
-  try {
-    const positions = await RobotPosition.find().sort({ createdAt: -1 });
-    res.json({ success: true, positions });
-  } catch (err) {
-    res.status(500).json({ success: false, message: 'Database error' });
-  }
-}
-
-async function deletePosition(req, res) {
-  try {
-    const result = await RobotPosition.findByIdAndDelete(req.params.id);
-    if (!result) return res.status(404).json({ success: false, message: 'Position not found' });
-    res.json({ success: true, deleted: true });
-  } catch (err) {
-    res.status(500).json({ success: false, message: 'Database error' });
   }
 }
 
@@ -294,10 +221,6 @@ module.exports = {
   receiveActionResult,
   enableFreemotion,
   disableFreemotion,
-  getCurrentJoints,
-  savePosition,
-  getPositions,
-  deletePosition,
   rebootTool,
   rebootMotors,
   calibrate,

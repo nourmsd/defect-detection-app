@@ -162,18 +162,26 @@
                 <div class="widget-field">
                   <span class="widget-field-label">Last Result</span>
                   <span class="widget-field-value"
-                    [class.val-green]="lastInspection.label === 'OK'"
-                    [class.val-red]="lastInspection.label !== 'OK'">
-                    {{ lastInspection.label === 'OK' ? 'CONFORMING' : 'DEFECTIVE' }}
+                    [class.val-green]="lastInspection.label === 'ok'"
+                    [class.val-red]="lastInspection.label !== 'ok'">
+                    {{ lastInspection.label === 'ok' ? 'CONFORMING' : 'DEFECTIVE' }}
                   </span>
                 </div>
                 <div class="widget-field">
                   <span class="widget-field-label">Expiry Date Read</span>
                   <span class="widget-field-value"
-                    [class.val-green]="lastInspection.detected_date && lastInspection.detected_date !== 'missing'"
-                    [class.val-amber]="!lastInspection.detected_date || lastInspection.detected_date === 'missing'">
-                    {{ (lastInspection.detected_date && lastInspection.detected_date !== 'missing') ? lastInspection.detected_date : 'missing' }}
+                    [class.val-green]="lastInspection.expiry_date && lastInspection.expiry_date !== 'missing'"
+                    [class.val-amber]="!lastInspection.expiry_date || lastInspection.expiry_date === 'missing'">
+                    {{ (lastInspection.expiry_date && lastInspection.expiry_date !== 'missing') ? lastInspection.expiry_date : 'missing' }}
                   </span>
+                </div>
+                <div class="widget-field" *ngIf="lastInspection.flavor && lastInspection.flavor !== 'missing'">
+                  <span class="widget-field-label">Flavor</span>
+                  <span class="widget-field-value">{{ lastInspection.flavor }}</span>
+                </div>
+                <div class="widget-field" *ngIf="lastInspection.defect_type">
+                  <span class="widget-field-label">Defect Type</span>
+                  <span class="widget-field-value val-red">{{ lastInspection.defect_type | uppercase }}</span>
                 </div>
                 <div class="widget-field">
                   <span class="widget-field-label">Confidence</span>
@@ -401,8 +409,9 @@
             <thead>
               <tr>
                 <th>Product ID</th>
-                <th>Inspection Device</th>
-                <th>Defect Confidence</th>
+                <th>Flavor</th>
+                <th>Defect Type</th>
+                <th>Confidence</th>
                 <th>Result</th>
                 <th>Detection Time</th>
               </tr>
@@ -414,7 +423,8 @@
                     <strong>{{ ((item._id || '') | slice:-6) || 'N/A' }}</strong>
                   </div>
                 </td>
-                <td>{{ item.device }}</td>
+                <td>{{ item.flavor || '—' }}</td>
+                <td><span class="pill pill-red">{{ (item.defect_type || '—') | uppercase }}</span></td>
                 <td>{{ (item.confidence > 1 ? item.confidence : item.confidence * 100) | number:'1.0-0' }}%</td>
                 <td><span class="pill pill-red">Defective</span></td>
                 <td>{{ item.timestamp | date:'dd MMM yyyy, HH:mm:ss' }}</td>

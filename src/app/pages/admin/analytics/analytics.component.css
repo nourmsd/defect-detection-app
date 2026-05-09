@@ -284,6 +284,9 @@
 .kpi-icon-green { background: var(--green-dim); color: var(--green); }
 .kpi-icon-amber { background: var(--amber-dim); color: var(--amber); }
 .kpi-icon-red   { background: var(--red-dim); color: var(--red); }
+.kpi-icon-slate { background: rgba(148, 163, 184, 0.15); color: rgb(148, 163, 184); }
+
+.kpi-unit { font-size: 0.55em; opacity: 0.7; margin-left: 2px; font-weight: 500; }
 
 .kpi-trend {
   display: flex;

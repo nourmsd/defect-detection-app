@@ -8,21 +8,17 @@ const API_TIMEOUT_MS = 8000;
 const ANALYTICS_TIMEOUT_MS = 20000;
 const ANALYTICS_ALL_TIMEOUT_MS = 60000; // All-Time scan can be slow on large collections
 
+export type DefectType = 'absent' | 'blurry' | 'expired';
+
 export interface Inspection {
   id: string;
-  label: 'OK' | 'defective';
+  label: 'ok' | 'defective';
+  defect_type?: DefectType | null;
+  flavor?: string;
+  expiry_date?: string;
   timestamp: string;
   confidence?: number;
   processing_time?: number;
-  detected_date?: string;
-  device?: string;
-}
-
-export interface SavedJointPosition {
-  _id: string;
-  name: string;
-  joints: number[];   // 6 values in radians
-  createdAt: string;
 }
 
 export interface StreamHealth {
@@ -105,7 +101,6 @@ export class ApiService {
 
   getRobotStatus(): Observable<{
     robot_connected: boolean;
-    robot_busy: boolean;
     freemotion_active: boolean;
     last_action: string;
     queue_size: number;
@@ -145,35 +140,6 @@ export class ApiService {
   disableFreemotion(): Observable<{ success: boolean; freemotion: boolean; message?: string }> {
     return this.http.post<{ success: boolean; freemotion: boolean; message?: string }>(
       `${this.baseUrl}/robot/freemotion/disable`, {},
-      { headers: this.authHeaders }
-    ).pipe(timeout(API_TIMEOUT_MS));
-  }
-
-  getCurrentJoints(): Observable<{ success: boolean; joints: number[]; message?: string }> {
-    return this.http.get<{ success: boolean; joints: number[]; message?: string }>(
-      `${this.baseUrl}/robot/current-joints`,
-      { headers: this.authHeaders }
-    ).pipe(timeout(API_TIMEOUT_MS));
-  }
-
-  getSavedPositions(): Observable<{ success: boolean; positions: SavedJointPosition[] }> {
-    return this.http.get<{ success: boolean; positions: SavedJointPosition[] }>(
-      `${this.baseUrl}/robot/positions`,
-      { headers: this.authHeaders }
-    ).pipe(timeout(API_TIMEOUT_MS));
-  }
-
-  saveJointPosition(name: string): Observable<{ success: boolean; position: SavedJointPosition; message?: string }> {
-    return this.http.post<{ success: boolean; position: SavedJointPosition; message?: string }>(
-      `${this.baseUrl}/robot/positions`,
-      { name },
-      { headers: this.authHeaders }
-    ).pipe(timeout(API_TIMEOUT_MS));
-  }
-
-  deleteJointPosition(id: string): Observable<{ success: boolean }> {
-    return this.http.delete<{ success: boolean }>(
-      `${this.baseUrl}/robot/positions/${id}`,
       { headers: this.authHeaders }
     ).pipe(timeout(API_TIMEOUT_MS));
   }

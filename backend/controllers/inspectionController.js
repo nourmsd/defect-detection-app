@@ -1,4 +1,5 @@
 const Inspection = require('../models/Inspection');
+const ErrorLog = require('../models/ErrorLog');
 const crypto = require('crypto');
 const { emitSocketEvent } = require('../utils/socketEvents');
 const { notifyRobotService } = require('./robotController');
@@ -7,13 +8,18 @@ const { getSetting } = require('./systemController');
 /* =========================================================
    NORMALIZATION
 ========================================================= */
+const ALLOWED_DEFECT_TYPES = ['absent', 'blurry', 'expired'];
+
 function normalizeInspectionPayload(payload = {}) {
   const {
+    id,
     label,
     confidence,
-    device,
     processing_time,
-    detected_date,
+    expiry_date,
+    detected_date,        // legacy alias from older clients
+    flavor,
+    defect_type,
     timestamp,
   } = payload;
 
@@ -23,21 +29,28 @@ function normalizeInspectionPayload(payload = {}) {
     throw err;
   }
 
-  let normalizedLabel = 'OK';
   const labelLower = String(label).toLowerCase();
+  const normalizedLabel =
+    ['defective', 'fail', 'nok'].includes(labelLower) ? 'defective' : 'ok';
 
-  if (['defective', 'fail', 'nok'].includes(labelLower)) {
-    normalizedLabel = 'defective';
+  let normalizedDefectType = null;
+  if (defect_type) {
+    const dt = String(defect_type).toLowerCase();
+    if (ALLOWED_DEFECT_TYPES.includes(dt)) normalizedDefectType = dt;
   }
+  // OK products never carry a defect type.
+  if (normalizedLabel === 'ok') normalizedDefectType = null;
 
   return {
     normalizedLabel,
     inspectionData: {
+      inspection_id: id ? String(id) : null,
       label: normalizedLabel,
+      defect_type: normalizedDefectType,
+      flavor: flavor || 'missing',
+      expiry_date: expiry_date || detected_date || 'missing',
       confidence: Number(confidence) || 0,
-      device: device || 'Niryo Camera',
       processing_time: Number(processing_time) || 0,
-      detected_date: detected_date || 'missing',
       timestamp: timestamp ? new Date(timestamp) : null,
     },
   };
@@ -54,11 +67,13 @@ async function persistInspectionAndBroadcast(payload = {}, io, meta = {}) {
     : new Date();
 
   const eventPayload = {
-    id: crypto.randomUUID(),
+    id: inspectionData.inspection_id || crypto.randomUUID(),
     label: normalizedLabel,
+    defect_type: inspectionData.defect_type,
+    flavor: inspectionData.flavor,
+    expiry_date: inspectionData.expiry_date,
     confidence: inspectionData.confidence,
     processing_time: inspectionData.processing_time,
-    detected_date: inspectionData.detected_date,
     timestamp: serverTimestamp.toISOString(),
   };
 
@@ -77,7 +92,6 @@ async function persistInspectionAndBroadcast(payload = {}, io, meta = {}) {
 
   return {
     ...eventPayload,
-    device: inspectionData.device,
     transport: meta.transport || 'socket',
   };
 }
@@ -130,8 +144,12 @@ async function getHistory(req, res) {
 
     const filter = {};
 
-    if (req.query.result === 'pass') filter.label = 'OK';
+    if (req.query.result === 'pass') filter.label = 'ok';
     if (req.query.result === 'fail') filter.label = 'defective';
+
+    if (req.query.defectType && ALLOWED_DEFECT_TYPES.includes(req.query.defectType)) {
+      filter.defect_type = req.query.defectType;
+    }
 
     // Confidence may be stored as 0-1 decimal or 0-100 percent depending on AI pipeline.
     // Frontend always sends percent (0-100). Normalize at query time via $expr.
@@ -152,7 +170,8 @@ async function getHistory(req, res) {
     }
 
     if (req.query.search) {
-      filter.device = { $regex: req.query.search, $options: 'i' };
+      const re = { $regex: req.query.search, $options: 'i' };
+      filter.$or = [{ flavor: re }, { expiry_date: re }, { inspection_id: re }];
     }
 
     const [history, total] = await Promise.all([
@@ -222,7 +241,14 @@ async function getAnalytics(req, res) {
 
     const match = dateFrom ? { timestamp: { $gte: dateFrom } } : {};
 
-    const [mainAgg, dailyTrend, confidenceDistribution, defectTypeBreakdown] = await Promise.all([
+    const robotErrorMatch = {
+      ...(dateFrom ? { timestamp: { $gte: dateFrom } } : {}),
+      errorType: { $regex: /robot/i },
+      resolved: true,
+      acknowledgedAt: { $ne: null },
+    };
+
+    const [mainAgg, dailyTrend, confidenceDistribution, defectTypeBreakdown, robotMTBF] = await Promise.all([
       Inspection.aggregate([
         { $match: match },
         {
@@ -231,6 +257,7 @@ async function getAnalytics(req, res) {
             total: { $sum: 1 },
             defective: { $sum: { $cond: [{ $eq: ['$label', 'defective'] }, 1, 0] } },
             avgConf: { $avg: '$confidence' },
+            avgProcessingTime: { $avg: '$processing_time' },
           },
         },
       ]),
@@ -270,23 +297,35 @@ async function getAnalytics(req, res) {
         { $sort: { _id: 1 } },
       ]),
 
-      // Defect breakdown by source device (only defective)
+      // Defect breakdown by defect_type (absent / blurry / expired)
       Inspection.aggregate([
         { $match: { ...match, label: 'defective' } },
         {
           $group: {
-            _id: { $ifNull: ['$device', 'Unknown'] },
+            _id: { $ifNull: ['$defect_type', 'unknown'] },
             count: { $sum: 1 },
           },
         },
         { $sort: { count: -1 } },
-        { $limit: 10 },
+      ]),
+
+      // Robot MTBF: avg duration (hours) from error log timestamp → fix (acknowledgedAt)
+      ErrorLog.aggregate([
+        { $match: robotErrorMatch },
+        {
+          $group: {
+            _id: null,
+            avgMs: { $avg: { $subtract: ['$acknowledgedAt', '$timestamp'] } },
+          },
+        },
       ]),
     ]);
 
     const total = mainAgg[0]?.total || 0;
     const defective = mainAgg[0]?.defective || 0;
     const avgConf = mainAgg[0]?.avgConf || 0;
+    const avgProcessingTime = mainAgg[0]?.avgProcessingTime || 0;
+    const mtbfHours = robotMTBF[0]?.avgMs ? robotMTBF[0].avgMs / 3600000 : 0;
 
     res.json({
       kpis: {
@@ -294,6 +333,8 @@ async function getAnalytics(req, res) {
         defective,
         passRate: total ? ((total - defective) / total) * 100 : 0,
         avgConfidence: avgConf > 1 ? avgConf : avgConf * 100,
+        avgProcessingTime,
+        MTBF: mtbfHours,
       },
       dailyTrend,
       confidenceDistribution,
