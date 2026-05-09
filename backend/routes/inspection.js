@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth');
 const roleMiddleware = require('../middleware/role');
@@ -11,13 +11,14 @@ router.post('/robot-log', inspectionController.logInspection);
 router.use(authMiddleware);
 
 // Admin routes
-router.get('/admin/stats', roleMiddleware(['admin']), inspectionController.getAdminStats);
-router.get('/admin/history', roleMiddleware(['admin', 'worker']), inspectionController.getHistory);
-router.get('/admin/analytics', roleMiddleware(['admin']), inspectionController.getAnalytics);
-router.delete('/admin/clean-test-data', roleMiddleware(['admin']), inspectionController.cleanTestData);
+router.get('/admin/stats', roleMiddleware(['supervisor']), inspectionController.getAdminStats);
+router.get('/admin/history', roleMiddleware(['supervisor', 'worker']), inspectionController.getHistory);
+router.get('/admin/analytics', roleMiddleware(['supervisor']), inspectionController.getAnalytics);
+router.delete('/admin/clean-test-data', roleMiddleware(['supervisor']), inspectionController.cleanTestData);
 
 // Shared or worker routes
-router.get('/worker/dashboard-data', roleMiddleware(['worker', 'admin']), inspectionController.getWorkerDashboardData);
+router.get('/worker/dashboard-data', roleMiddleware(['worker', 'supervisor']), inspectionController.getWorkerDashboardData);
 router.get('/inspections', inspectionController.getHistory);
 
 module.exports = router;
+

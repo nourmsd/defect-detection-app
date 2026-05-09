@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const http = require('http');
@@ -42,7 +42,7 @@ let globalSocketServer = null;
 let connectedClients = 0;
 
 // Robot-gated pipeline state machine
-// States: IDLE (no robot) → READY/RUNNING (robot connected) → PAUSED (robot lost)
+// States: IDLE (no robot) â†’ READY/RUNNING (robot connected) â†’ PAUSED (robot lost)
 let _robotConnected = false;   // last known robot connection state
 let _pipelineActive = false;   // true when AI pipeline process is alive
 
@@ -117,7 +117,7 @@ async function triggerDangerAlert(io, message) {
   }
 }
 
-// Supervisor emergency broadcast — sends to ALL approved users' emails
+// Supervisor emergency broadcast â€” sends to ALL approved users' emails
 async function triggerSupervisorBroadcast(io, message) {
   const now = Date.now();
   const lastSent = recentDangerAlerts.get(message) || 0;
@@ -198,7 +198,7 @@ async function startNiryoStreamService() {
   // app.py (which now serves /stream on :5001 itself using the same single
   // NiryoRobot connection it already holds for motion control), spawning
   // niryo_stream.py creates a SECOND TCP connection to robot port 40001.
-  // The arm only allows one connection — the two processes kick each other
+  // The arm only allows one connection â€” the two processes kick each other
   // out in a loop, which is what your "utf-8 codec can't decode byte 0xab"
   // error and the "Disconnected from robot / Connecting to robot" ping-pong
   // were showing. This function is now a no-op.
@@ -222,11 +222,11 @@ async function startNiryoPickPlaceService() {
         Object.prototype.hasOwnProperty.call(data, 'queue_size')
       );
     if (looksLikeRobotService) {
-      console.log('[niryo-pick-place] service already running — reusing existing process');
+      console.log('[niryo-pick-place] service already running â€” reusing existing process');
       return;
     }
   } catch {
-    // ignore probe errors — we'll attempt to spawn below
+    // ignore probe errors â€” we'll attempt to spawn below
   }
 
   const script = path.join(__dirname, 'app.py');
@@ -234,7 +234,7 @@ async function startNiryoPickPlaceService() {
   try {
     cmd = resolvePythonCommand();
   } catch (e) {
-    console.warn('[niryo-pick-place] Python venv not found — pick/place service disabled:', e.message);
+    console.warn('[niryo-pick-place] Python venv not found â€” pick/place service disabled:', e.message);
     return;
   }
 
@@ -271,7 +271,7 @@ async function startNiryoPickPlaceService() {
       });
     });
     pickPlaceProc.on('exit', (code) => {
-      console.warn(`[niryo-pick-place] exited with code ${code} — will restart in 5s`);
+      console.warn(`[niryo-pick-place] exited with code ${code} â€” will restart in 5s`);
       pickPlaceProc = null;
       setTimeout(() => { startNiryoPickPlaceService(); }, 5000);
     });
@@ -296,7 +296,7 @@ function startAIPipeline(io) {
 
   // Hard prerequisite: robot must be connected before starting inference
   if (!_robotConnected) {
-    console.log('[ai-pipeline] Robot not connected — pipeline start deferred until robot is reachable');
+    console.log('[ai-pipeline] Robot not connected â€” pipeline start deferred until robot is reachable');
     return;
   }
 
@@ -306,12 +306,12 @@ function startAIPipeline(io) {
   try {
     cmd = resolvePythonCommand();
   } catch (e) {
-    console.warn('[ai-pipeline] Python venv not found — AI pipeline disabled:', e.message);
+    console.warn('[ai-pipeline] Python venv not found â€” AI pipeline disabled:', e.message);
     return;
   }
 
   _pipelineActive = true;
-  console.log('[ai-pipeline] Robot connected — starting frame acquisition and inference loop');
+  console.log('[ai-pipeline] Robot connected â€” starting frame acquisition and inference loop');
 
   aiProc = spawn(cmd.command, [...cmd.args, '-u', script], {
     cwd: aiRoot,
@@ -359,10 +359,10 @@ function startAIPipeline(io) {
       const robotOk = Boolean(health?.robot_connected);
       _robotConnected = robotOk;
       if (robotOk) {
-        console.log('[ai-pipeline] Robot still connected — restarting in 3s');
+        console.log('[ai-pipeline] Robot still connected â€” restarting in 3s');
         setTimeout(() => startAIPipeline(io), 3000);
       } else {
-        console.log('[ai-pipeline] Robot disconnected — pipeline suspended until robot reconnects');
+        console.log('[ai-pipeline] Robot disconnected â€” pipeline suspended until robot reconnects');
         emitSocketEvent(io, 'inference_status', {
           status: 'PAUSED',
           detected_date: 'missing',
@@ -384,7 +384,7 @@ function startAIPipeline(io) {
 function stopAIPipeline(io) {
   if (!_pipelineActive && (!aiProc || aiProc.killed)) return;
   _pipelineActive = false;
-  console.log('[ai-pipeline] Robot disconnected — stopping inference loop gracefully');
+  console.log('[ai-pipeline] Robot disconnected â€” stopping inference loop gracefully');
 
   if (aiProc && !aiProc.killed) {
     aiProc.kill('SIGTERM');
@@ -438,11 +438,11 @@ async function pollSystemEvents(io) {
     // PLC is considered online when robot arm connection is established
     const plcOnline = robotConnected;
 
-    // ── Robot-gated AI pipeline lifecycle ──────────────────────────────────
+    // â”€â”€ Robot-gated AI pipeline lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (robotConnected && !_robotConnected) {
-      // Robot just came online — arm the pipeline
+      // Robot just came online â€” arm the pipeline
       _robotConnected = true;
-      console.log('[system] Robot connected — starting AI pipeline (frame acquisition + inference)');
+      console.log('[system] Robot connected â€” starting AI pipeline (frame acquisition + inference)');
       emitSocketEvent(io, 'inference_status', {
         status: 'READY',
         detected_date: 'missing',
@@ -456,9 +456,9 @@ async function pollSystemEvents(io) {
       });
       startAIPipeline(io);
     } else if (!robotConnected && _robotConnected) {
-      // Robot just went offline — suspend everything
+      // Robot just went offline â€” suspend everything
       _robotConnected = false;
-      console.log('[system] Robot disconnected — suspending AI pipeline (no inference, no frame analysis)');
+      console.log('[system] Robot disconnected â€” suspending AI pipeline (no inference, no frame analysis)');
       stopAIPipeline(io);
     }
 
@@ -467,14 +467,14 @@ async function pollSystemEvents(io) {
     if (newState !== _prevTimelineState) {
       const now = new Date();
       const hour = now.getHours();
-      // Only log events during production window (07:00 – 19:00)
+      // Only log events during production window (07:00 â€“ 19:00)
       if (hour >= 7 && hour < 19) {
         if (newState === 'starting' && _prevTimelineState !== 'running') {
-          addTimelineEvent('start', 'Robot + PLC Connected — System Starting', io).catch(() => {});
+          addTimelineEvent('start', 'Robot + PLC Connected â€” System Starting', io).catch(() => {});
         } else if (newState === 'running') {
-          addTimelineEvent('running', 'All Systems Online — Fully Operational', io).catch(() => {});
+          addTimelineEvent('running', 'All Systems Online â€” Fully Operational', io).catch(() => {});
         } else if (newState === 'stopped') {
-          addTimelineEvent('stopping', 'Robot Disconnected — System Stopped', io).catch(() => {});
+          addTimelineEvent('stopping', 'Robot Disconnected â€” System Stopped', io).catch(() => {});
         }
       }
       _prevTimelineState = newState;
@@ -541,7 +541,7 @@ async function pollSystemEvents(io) {
       lastSystemHealthSignature = sig;
       emitSocketEvent(io, 'system_health', offline);
     }
-    // Health endpoint unreachable — treat as robot offline
+    // Health endpoint unreachable â€” treat as robot offline
     if (_robotConnected) {
       _robotConnected = false;
       stopAIPipeline(io);
@@ -562,7 +562,7 @@ function scheduleDaily7PMReset(io) {
   }
 
   function fireDailyReset() {
-    console.log('[DailyReset] 19:00 — Resetting daily AI pipeline counters');
+    console.log('[DailyReset] 19:00 â€” Resetting daily AI pipeline counters');
     emitSocketEvent(io, 'daily_reset', { timestamp: new Date().toISOString() });
     // Schedule next reset for tomorrow
     setTimeout(fireDailyReset, msUntilNext7PM());
@@ -618,9 +618,9 @@ app.get('/api/stream/health', async (req, res) => {
 // Admin can manually trigger a danger alert
 app.post('/api/admin/danger-alert',
   authMiddleware,
-  roleMiddleware(['admin']),
+  roleMiddleware(['supervisor']),
   async (req, res) => {
-    const message = req.body?.message || 'Manual danger alert triggered by admin';
+    const message = req.body?.message || 'Manual danger alert triggered by supervisor';
     await triggerSupervisorBroadcast(io, message);
     res.json({ success: true, message: 'Danger alert sent to all users' });
   }
@@ -635,8 +635,8 @@ mongoose.connect(MONGO_URI)
   .then(async () => {
     console.log('Connected to MongoDB');
 
-    // ── Startup cleanup ────────────────────────────────────────────────────
-    // 1. Reset isOnline for all users — server restart means no active sessions.
+    // â”€â”€ Startup cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // 1. Reset isOnline for all users â€” server restart means no active sessions.
     await User.updateMany({ isOnline: true }, { $set: { isOnline: false } })
       .then(r => { if (r.modifiedCount) console.log(`[startup] Reset isOnline for ${r.modifiedCount} user(s)`); })
       .catch(e => console.error('[startup] isOnline reset failed:', e.message));
@@ -645,7 +645,7 @@ mongoose.connect(MONGO_URI)
     await closeStaleOpenSessions().catch(e =>
       console.error('[startup] Stale session cleanup failed:', e.message)
     );
-    // ──────────────────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     // Start robot control first so it can calibrate/move before the camera stream
     // grabs a connection (some robot firmware/SDK combos behave poorly with
@@ -653,7 +653,7 @@ mongoose.connect(MONGO_URI)
     startNiryoPickPlaceService();
     // Give pick/place time to calibrate/move before stream connects.
     setTimeout(() => startNiryoStreamService(), 12000);
-    // AI pipeline is NOT started here — startSystemEventPolling checks robot health
+    // AI pipeline is NOT started here â€” startSystemEventPolling checks robot health
     // and calls startAIPipeline only when _robotConnected becomes true.
     startSystemEventPolling(io);
     scheduleDaily7PMReset(io);
@@ -666,3 +666,4 @@ mongoose.connect(MONGO_URI)
     );
   })
   .catch(console.error);
+

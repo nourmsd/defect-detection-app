@@ -4,6 +4,8 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
+    "start:clean": "node -e \"const fs=require('fs'),p=require('path');for(const d of ['.angular/cache','dist']){try{fs.rmSync(p.resolve(d),{recursive:true,force:true});console.log('cleaned',d)}catch(e){}}\" && ng serve",
+    "kill:4200": "node -e \"const{execSync}=require('child_process');try{const o=execSync('netstat -ano ^| findstr :4200').toString();const pids=[...new Set(o.split(/\\r?\\n/).map(l=>l.trim().split(/\\s+/).pop()).filter(p=>/^\\d+$/.test(p)))];for(const pid of pids){try{execSync('taskkill /F /PID '+pid);console.log('killed',pid)}catch(e){}}}catch(e){console.log('port 4200 already free')}\"",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
