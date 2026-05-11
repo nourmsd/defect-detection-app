@@ -740,25 +740,101 @@
           <div class="tl-container" *ngIf="!timelineLoading">
             <!-- Hour labels -->
             <div class="tl-hour-labels">
-              <span *ngFor="let h of timelineHours()" class="tl-hour-label">
+              <span *ngFor="let h of timelineHours()" class="tl-hour-label tl-hour-clickable"
+                [class.tl-hour-active]="selectedHour === h"
+                (click)="selectHour(h)"
+                matTooltip="Click to zoom into this hour">
                 {{ h.toString().padStart(2,'0') }}:00
               </span>
             </div>
 
-            <!-- Track -->
-            <div class="tl-track">
-              <div class="tl-baseline"></div>
-              <!-- Events as markers -->
-              <div *ngFor="let ev of timelineEvents"
-                class="tl-marker"
+            <!-- Track (continuous colored band) -->
+            <div class="tl-track tl-track-band">
+              <div *ngIf="nowPositionDay() !== null" class="tl-now-cursor"
+                [style.left.%]="nowPositionDay()"
+                matTooltip="Now">
+                <span class="tl-now-label">now</span>
+              </div>
+              <div class="tl-band">
+                <div *ngFor="let seg of timelineSegments()"
+                  class="tl-band-seg"
+                  [class.tl-band-yellow]="seg.color === 'yellow'"
+                  [class.tl-band-green]="seg.color === 'green'"
+                  [class.tl-band-red]="seg.color === 'red'"
+                  [style.left.%]="seg.leftPct"
+                  [style.width.%]="seg.widthPct"
+                  [matTooltip]="seg.label + ' — ' + seg.fromLabel + ' → ' + seg.toLabel">
+                </div>
+              </div>
+              <!-- Event tick markers above the band (only state-change transitions get labels) -->
+              <div *ngFor="let ev of visibleTicks()"
+                class="tl-tick"
                 [style.left]="timelineEventLeft(ev)"
-                [class.tl-marker-yellow]="ev.color === 'yellow'"
-                [class.tl-marker-green]="ev.color === 'green'"
-                [class.tl-marker-red]="ev.color === 'red'"
+                [class.tl-tick-yellow]="ev.color === 'yellow'"
+                [class.tl-tick-green]="ev.color === 'green'"
+                [class.tl-tick-red]="ev.color === 'red'"
                 [matTooltip]="ev.label + ' — ' + (ev.timestamp | date:'HH:mm:ss')">
-                <div class="tl-marker-dot"></div>
-                <div class="tl-marker-line"></div>
-                <div class="tl-marker-label">{{ ev.label }}<br><small>{{ ev.timestamp | date:'HH:mm' }}</small></div>
+                <div class="tl-tick-line"></div>
+                <div class="tl-tick-label">{{ ev.label }} <small>{{ ev.timestamp | date:'HH:mm' }}</small></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hour zoom (big version of the selected hour) -->
+          <div class="tl-hour-zoom" *ngIf="!timelineLoading && selectedHour !== null">
+            <div class="tl-hour-zoom-header">
+              <div class="tl-hour-zoom-title">
+                <mat-icon>zoom_in</mat-icon>
+                <h3>{{ selectedHour!.toString().padStart(2,'0') }}:00 – {{ (selectedHour! + 1).toString().padStart(2,'0') }}:00</h3>
+                <span class="tl-hour-zoom-count">{{ eventsInHour(selectedHour!).length }} event(s)</span>
+              </div>
+              <button class="tl-zoom-close" (click)="clearSelectedHour()" matTooltip="Close zoom">
+                <mat-icon>close</mat-icon>
+              </button>
+            </div>
+
+            <div class="tl-hour-zoom-body">
+              <div class="tl-hour-minute-labels">
+                <span *ngFor="let m of hourMinuteTicks()" class="tl-hour-minute-label">
+                  {{ selectedHour!.toString().padStart(2,'0') }}:{{ (m % 60).toString().padStart(2,'0') }}
+                </span>
+              </div>
+
+              <div class="tl-hour-track tl-track-band">
+                <div *ngIf="nowPositionHour() !== null" class="tl-now-cursor tl-now-cursor-big"
+                  [style.left.%]="nowPositionHour()"
+                  matTooltip="Now">
+                  <span class="tl-now-label">now</span>
+                </div>
+                <div class="tl-band tl-band-big">
+                  <div *ngFor="let seg of hourSegments()"
+                    class="tl-band-seg"
+                    [class.tl-band-yellow]="seg.color === 'yellow'"
+                    [class.tl-band-green]="seg.color === 'green'"
+                    [class.tl-band-red]="seg.color === 'red'"
+                    [style.left.%]="seg.leftPct"
+                    [style.width.%]="seg.widthPct"
+                    [matTooltip]="seg.label + ' — ' + seg.fromLabel + ' → ' + seg.toLabel">
+                  </div>
+                </div>
+                <div *ngFor="let m of hourMinuteTicks()" class="tl-hour-tick"
+                  [style.left.%]="(m / 60) * 100"></div>
+
+                <div *ngFor="let ev of visibleTicksHour()"
+                  class="tl-tick tl-tick-big"
+                  [style.left]="hourEventLeft(ev)"
+                  [class.tl-tick-yellow]="ev.color === 'yellow'"
+                  [class.tl-tick-green]="ev.color === 'green'"
+                  [class.tl-tick-red]="ev.color === 'red'"
+                  [matTooltip]="ev.label + ' — ' + (ev.timestamp | date:'HH:mm:ss')">
+                  <div class="tl-tick-line"></div>
+                  <div class="tl-tick-label">{{ ev.label }} <small>{{ ev.timestamp | date:'HH:mm:ss' }}</small></div>
+                </div>
+              </div>
+
+              <div class="empty-state tl-hour-empty" *ngIf="eventsInHour(selectedHour!).length === 0">
+                <mat-icon>schedule</mat-icon>
+                <span>No events in this hour</span>
               </div>
             </div>
           </div>

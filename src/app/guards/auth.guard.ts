@@ -11,20 +11,36 @@ export class AuthGuard implements CanActivate {
 
   canActivate(route: ActivatedRouteSnapshot, state: RouterStateSnapshot) {
     const user = this.authService.userValue;
-    if (user) {
-      // check if route is restricted by role
-      if (route.data['roles'] && !route.data['roles'].includes(user.role)) {
-        // role not authorised so redirect to appropriate dashboard
-        const redirect = user.role === 'admin' ? '/admin-dashboard' : '/worker-dashboard';
-        this.router.navigate([redirect]);
-        return false;
-      }
-      // authorised so return true
-      return true;
+    if (!user) {
+      this.router.navigate(['/login'], { queryParams: { returnUrl: state.url } });
+      return false;
     }
 
-    // not logged in so redirect to login page with the return url
-    this.router.navigate(['/login'], { queryParams: { returnUrl: state.url } });
-    return false;
+    // Treat legacy 'admin' role (from before the rename) as 'supervisor'.
+    const rawRole = String(user.role || '').toLowerCase();
+    const role = rawRole === 'admin' ? 'supervisor' : rawRole;
+    const allowed = (route.data['roles'] as string[] | undefined)
+      ?.map(r => r.toLowerCase())
+      .map(r => r === 'admin' ? 'supervisor' : r);
+
+    if (allowed && !allowed.includes(role)) {
+      // Role not allowed on this route. Redirect to a dashboard the user CAN
+      // reach — and only if it differs from the current URL — otherwise we'd
+      // bounce between two routes the role can't enter and create an
+      // infinite loop (which is exactly the bug we just fixed).
+      const target = role === 'supervisor' ? '/admin-dashboard'
+                   : role === 'worker' ? '/worker-dashboard'
+                   : null;
+
+      if (target && target !== state.url.split('?')[0]) {
+        this.router.navigate([target]);
+      } else {
+        // No safe destination (unknown role, or already at the target). Force re-login.
+        this.authService.logout();
+      }
+      return false;
+    }
+
+    return true;
   }
 }

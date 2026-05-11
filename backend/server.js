@@ -418,6 +418,7 @@ function stopAIPipeline(io) {
 
 // State-driven timeline tracking
 let _prevTimelineState = null;  // 'idle' | 'starting' | 'running' | 'stopped'
+let _prevPlcOnline = null;      // null = first probe (don't emit); true/false = known state
 
 function deriveTimelineState(robotConnected, aiOnline, dbOnline) {
   if (!robotConnected) return 'stopped';
@@ -479,6 +480,20 @@ async function pollSystemEvents(io) {
       }
       _prevTimelineState = newState;
     }
+
+    // PLC connectivity transitions â€” emitted independently of the combined
+    // robot/AI/db timeline so PLC online/offline edges are individually visible.
+    if (_prevPlcOnline !== null && plcOnline !== _prevPlcOnline) {
+      const hour = new Date().getHours();
+      if (hour >= 7 && hour < 19) {
+        if (plcOnline) {
+          addTimelineEvent('start', 'PLC Connected', io).catch(() => {});
+        } else {
+          addTimelineEvent('stopping', 'PLC Disconnected', io).catch(() => {});
+        }
+      }
+    }
+    _prevPlcOnline = plcOnline;
 
     const payload = {
       fps: Number(health?.avg_fps) || 0,

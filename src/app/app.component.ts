@@ -8,4 +8,7 @@ import { Component } from '@angular/core';
 })
 export class AppComponent {
   title = 'smart-quality-control-frontend';
+  constructor() {
+    (window as any).__bootMark__?.('AppComponent constructed');
+  }
 }

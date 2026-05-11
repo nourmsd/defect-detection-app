@@ -57,6 +57,7 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   timelineLoading = false;
   readonly TIMELINE_START_H = 7;
   readonly TIMELINE_END_H   = 19;
+  selectedHour: number | null = null;
 
   /* ── Settings ────────────────────────────── */
   settings: { daily_target: number; expiry_threshold: string | null } = { daily_target: 450, expiry_threshold: null };
@@ -402,6 +403,174 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
     const arr = [];
     for (let h = this.TIMELINE_START_H; h <= this.TIMELINE_END_H; h++) arr.push(h);
     return arr;
+  }
+
+  selectHour(h: number) {
+    this.selectedHour = (this.selectedHour === h) ? null : h;
+  }
+
+  clearSelectedHour() {
+    this.selectedHour = null;
+  }
+
+  eventsInHour(h: number): any[] {
+    return this.timelineEvents.filter(ev => new Date(ev.timestamp).getHours() === h);
+  }
+
+  hourEventLeft(event: any): string {
+    const ts = new Date(event.timestamp);
+    const min = ts.getMinutes() + ts.getSeconds() / 60;
+    const pct = (min / 60) * 100;
+    return `${pct.toFixed(2)}%`;
+  }
+
+  hourMinuteTicks(): number[] {
+    return [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
+  }
+
+  /* Compute colored segments between consecutive events.
+     - rangeStart/End : visual scale (denominator for %)
+     - dataEnd        : where to stop the trailing segment (e.g. "now" on today) */
+  private buildSegments(rangeStartMin: number, rangeEndMin: number, dataEndMin: number, events: any[]): any[] {
+    const totalMin = rangeEndMin - rangeStartMin;
+    if (totalMin <= 0) return [];
+
+    const clampedEnd = Math.min(rangeEndMin, dataEndMin);
+
+    const sorted = [...events].sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
+    const toMin = (ev: any): number => {
+      const ts = new Date(ev.timestamp);
+      return ts.getHours() * 60 + ts.getMinutes() + ts.getSeconds() / 60;
+    };
+
+    const segments: any[] = [];
+    let cursor = rangeStartMin;
+    let currentColor: string | null = null;
+    let currentLabel = '';
+
+    if (sorted.length === 0) return [];
+
+    for (let i = 0; i < sorted.length; i++) {
+      const ev = sorted[i];
+      const evMin = Math.max(rangeStartMin, Math.min(clampedEnd, toMin(ev)));
+
+      if (currentColor !== null && evMin > cursor) {
+        const leftPct = ((cursor - rangeStartMin) / totalMin) * 100;
+        const widthPct = ((evMin - cursor) / totalMin) * 100;
+        segments.push({
+          color: currentColor,
+          leftPct, widthPct,
+          fromLabel: this.minToHHMM(cursor),
+          toLabel: this.minToHHMM(evMin),
+          label: currentLabel
+        });
+      }
+
+      cursor = evMin;
+      currentColor = ev.color || 'yellow';
+      currentLabel = ev.label || '';
+    }
+
+    // Trailing segment up to dataEnd (capped at "now" for today)
+    if (currentColor !== null && cursor < clampedEnd) {
+      const leftPct = ((cursor - rangeStartMin) / totalMin) * 100;
+      const widthPct = ((clampedEnd - cursor) / totalMin) * 100;
+      segments.push({
+        color: currentColor,
+        leftPct, widthPct,
+        fromLabel: this.minToHHMM(cursor),
+        toLabel: this.minToHHMM(clampedEnd),
+        label: currentLabel
+      });
+    }
+
+    return segments;
+  }
+
+  private minToHHMM(min: number): string {
+    const h = Math.floor(min / 60);
+    const m = Math.floor(min % 60);
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  }
+
+  private isTimelineDateToday(): boolean {
+    return this.timelineDate === new Date().toISOString().slice(0, 10);
+  }
+
+  private nowMinutesOfDay(): number {
+    const n = new Date();
+    return n.getHours() * 60 + n.getMinutes() + n.getSeconds() / 60;
+  }
+
+  /* Cap the visible range at "now" when looking at today, so future hours
+     don't get filled in by the last event's color. */
+  private cappedEnd(endMin: number): number {
+    if (!this.isTimelineDateToday()) return endMin;
+    return Math.min(endMin, this.nowMinutesOfDay());
+  }
+
+  timelineSegments(): any[] {
+    const startMin = this.TIMELINE_START_H * 60;
+    const endMin = this.TIMELINE_END_H * 60;
+    const dataEnd = this.cappedEnd(endMin);
+    return this.buildSegments(startMin, endMin, dataEnd, this.timelineEvents);
+  }
+
+  hourSegments(): any[] {
+    if (this.selectedHour === null) return [];
+    const startMin = this.selectedHour * 60;
+    const endMin = (this.selectedHour + 1) * 60;
+    const dataEnd = this.cappedEnd(endMin);
+    return this.buildSegments(startMin, endMin, dataEnd, this.eventsInHour(this.selectedHour));
+  }
+
+  /* Only show labels for ticks whose state-color differs from the previous one,
+     to keep the band readable when many micro-events fire in the same second. */
+  visibleTicks(): any[] {
+    const sorted = [...this.timelineEvents].sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    const out: any[] = [];
+    let lastColor: string | null = null;
+    for (const ev of sorted) {
+      if (ev.color !== lastColor) { out.push(ev); lastColor = ev.color; }
+    }
+    return out;
+  }
+
+  visibleTicksHour(): any[] {
+    if (this.selectedHour === null) return [];
+    const sorted = this.eventsInHour(this.selectedHour).sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    const out: any[] = [];
+    let lastColor: string | null = null;
+    for (const ev of sorted) {
+      if (ev.color !== lastColor) { out.push(ev); lastColor = ev.color; }
+    }
+    return out;
+  }
+
+  /* % position of "now" inside the full-day timeline (for the live cursor). */
+  nowPositionDay(): number | null {
+    if (!this.isTimelineDateToday()) return null;
+    const total = (this.TIMELINE_END_H - this.TIMELINE_START_H) * 60;
+    const m = this.nowMinutesOfDay() - this.TIMELINE_START_H * 60;
+    if (m < 0 || m > total) return null;
+    return (m / total) * 100;
+  }
+
+  /* % position of "now" inside the selected hour zoom view. */
+  nowPositionHour(): number | null {
+    if (this.selectedHour === null || !this.isTimelineDateToday()) return null;
+    const now = this.nowMinutesOfDay();
+    const startMin = this.selectedHour * 60;
+    const endMin = (this.selectedHour + 1) * 60;
+    if (now < startMin || now > endMin) return null;
+    return ((now - startMin) / 60) * 100;
   }
 
   timelineColorClass(event: any): string {

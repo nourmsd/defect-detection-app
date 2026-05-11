@@ -68,4 +68,8 @@ import { ErrorInterceptor } from './services/error.interceptor';
   ],
   bootstrap: [AppComponent]
 })
-export class AppModule { }
+export class AppModule {
+  constructor() {
+    (window as any).__bootMark__?.('AppModule constructed');
+  }
+}

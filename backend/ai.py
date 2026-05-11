@@ -694,6 +694,9 @@ class InspectionResult:
     done:           bool                             = False
     aborted:        bool                             = False  # operator removed the product
     t_start:        float                            = field(default_factory=time.perf_counter)
+    # Final classification — set by app.py after the gather loop completes.
+    final_label:    Optional[str]                    = None   # "ok" / "defective"
+    defect_type:    Optional[str]                    = None   # "absent" / "blurry" / "expired" / None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -845,6 +848,22 @@ def build_display(
                 cv2.FONT_HERSHEY_SIMPLEX, 0.42, (110,110,110), 1, cv2.LINE_AA)
     cv2.putText(panel, f"STATE: {state}", (pad,40),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.40, (160,160,160), 1, cv2.LINE_AA)
+    # Final classification banner (only set once gather completes)
+    if result.final_label is not None:
+        is_ok = result.final_label == "ok"
+        verdict_color = _COLOR_VALID if is_ok else _COLOR_DEFECT
+        verdict_txt   = "CONFORMING" if is_ok else "DEFECTIVE"
+        cv2.putText(panel, f"VERDICT: {verdict_txt}", (pad, 58),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.46, verdict_color, 1, cv2.LINE_AA)
+        if not is_ok and result.defect_type:
+            defect_map = {
+                "absent":  "no date detected",
+                "blurry":  "date unreadable",
+                "expired": "past expiry",
+            }
+            sub = defect_map.get(result.defect_type, result.defect_type)
+            cv2.putText(panel, f"  {result.defect_type.upper()} — {sub}", (pad, 74),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, _COLOR_DEFECT, 1, cv2.LINE_AA)
     # Show scan attempt counter on panel
     if scan_attempts > 0:
         attempt_color = _COLOR_WARNING if scan_attempts < MAX_SCAN_ATTEMPTS else _COLOR_DEFECT
@@ -877,22 +896,9 @@ def build_display(
                 bc_color, 1, cv2.LINE_AA)
     py += 14
 
-    # Enhanced barcode crop thumbnail — what pyzbar actually saw after upscale +
-    # CLAHE + sharpen. Helps debug "why didn't it decode?" cases.
-    if result.barcode_preview is not None and result.barcode_preview.size > 0:
-        try:
-            prev      = result.barcode_preview
-            thumb_w   = _PANEL_W - 2 * pad
-            thumb_h   = max(28, min(70, int(thumb_w * prev.shape[0] / max(prev.shape[1], 1))))
-            thumb_gs  = cv2.resize(prev, (thumb_w, thumb_h), interpolation=cv2.INTER_NEAREST)
-            thumb_bgr = cv2.cvtColor(thumb_gs, cv2.COLOR_GRAY2BGR)
-            cv2.rectangle(panel, (pad-1, py-1), (pad+thumb_w, py+thumb_h), bc_color, 1)
-            panel[py:py+thumb_h, pad:pad+thumb_w] = thumb_bgr
-            cv2.putText(panel, "barcode crop (enhanced)", (pad, py+thumb_h+10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.28, (90,90,90), 1, cv2.LINE_AA)
-            py += thumb_h + 14
-        except Exception:
-            py += 4
+    # Barcode crop thumbnail removed — the decoded number above is the
+    # operator-relevant signal. The DroidCam side stream still shows the
+    # live YOLO bbox for debugging if needed.
 
     cv2.line(panel, (pad,py+2), (_PANEL_W-pad,py+2), (38,38,52), 1);  py += 10
 

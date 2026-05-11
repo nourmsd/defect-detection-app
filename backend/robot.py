@@ -226,6 +226,43 @@ def release_robot_connection(reason: str = "standby") -> None:
             log.warning(f"Robot disconnect warning: {exc}")
 
 
+def reconnect_robot_socket(reason: str = "camera desync") -> bool:
+    """Lightweight socket-only reconnect. Closes the existing NiryoRobot TCP
+    connection and opens a fresh one WITHOUT calibrating or moving the arm —
+    used to recover from pyniryo byte-stream desync (the 'utf-8 codec can't
+    decode byte 0xff' error after long sessions). The robot is left wherever
+    it currently is. Returns True on success.
+
+    Holds _state_lock during the swap so motion/action-queue code that grabs
+    _robot mid-reconnect either sees the old reference (about to close) or the
+    new one (already valid) — never a half-built object.
+    """
+    global _robot, _robot_ok
+    log.warning(f"[reconnect] Rebuilding robot TCP socket — {reason}")
+    with _state_lock:
+        old = _robot
+        _robot, _robot_ok = None, False
+    if old is not None:
+        try:
+            close_fn = getattr(old, "close_connection", None)
+            if callable(close_fn):
+                close_fn()
+        except Exception as exc:
+            log.warning(f"[reconnect] old socket close warning: {exc}")
+    try:
+        from pyniryo import NiryoRobot
+        new_robot = NiryoRobot(ROBOT_IP)
+        with _state_lock:
+            _robot, _robot_ok = new_robot, True
+        log.info("[reconnect] Robot TCP re-established ✔")
+        return True
+    except Exception as exc:
+        log.error(f"[reconnect] Failed to rebuild socket: {exc}")
+        with _state_lock:
+            _robot, _robot_ok = None, False
+        return False
+
+
 def ensure_robot_ready() -> bool:
     global _recovery_in_progress
     with _state_lock:
@@ -713,6 +750,14 @@ def _camera_loop() -> None:
     global _camera_jpeg_bytes, _camera_frame_bgr, _camera_frame_count
     log.info("[camera] grabber thread started — pumping frames from robot.get_img_compressed()")
     fail_streak = 0
+    # When the pyniryo TCP byte stream desyncs (utf-8 decode errors after a
+    # long session), retrying the same socket does nothing — only a fresh
+    # NiryoRobot() rebuild clears the protocol state. After ~3 s of failed
+    # frames, rebuild the socket. The cooldown stops us from hammering reconnect
+    # if the underlying issue is the robot being unreachable.
+    RECONNECT_AFTER_STREAK = 30  # ~3 s at 100 ms retry interval
+    RECONNECT_COOLDOWN_S   = 10.0
+    last_reconnect_ts = 0.0
     while True:
         with _state_lock:
             robot = _robot
@@ -737,6 +782,10 @@ def _camera_loop() -> None:
             fail_streak += 1
             if fail_streak == 1 or fail_streak % 20 == 0:
                 log.warning(f"[camera] get_img_compressed failed (streak={fail_streak}): {exc}")
+            if fail_streak >= RECONNECT_AFTER_STREAK and (time.time() - last_reconnect_ts) > RECONNECT_COOLDOWN_S:
+                last_reconnect_ts = time.time()
+                if reconnect_robot_socket(reason=f"camera streak={fail_streak}"):
+                    fail_streak = 0  # give the fresh socket a clean slate
             time.sleep(0.1)
 
 

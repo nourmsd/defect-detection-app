@@ -24,7 +24,9 @@ export class AuthService {
   public currentUser$ = this.currentUserSubject.asObservable();
 
   constructor(private http: HttpClient, private router: Router) {
+    (window as any).__bootMark__?.('AuthService constructor: enter');
     this.restoreSession();
+    (window as any).__bootMark__?.('AuthService constructor: restoreSession done');
   }
 
   // Separate method so it runs after constructor injection is complete.

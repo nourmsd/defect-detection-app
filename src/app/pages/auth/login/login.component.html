@@ -48,7 +48,7 @@
         </span>
       </div>
 
-      <button class="login-btn" type="submit" [disabled]="loginForm.invalid || loading">
+      <button class="login-btn" type="submit" [disabled]="submitDisabled">
         <mat-icon *ngIf="!loading">login</mat-icon>
         <span class="login-spinner" *ngIf="loading"></span>
         {{ loading ? 'Signing in…' : 'Sign In' }}

@@ -47,7 +47,13 @@ PIPELINE_EVENT_PREFIX = os.environ.get("PIPELINE_EVENT_PREFIX", "SOCKET_EVENT ")
 DEVICE_NAME           = "Niryo Robot Camera"
 
 # ── Display ───────────────────────────────────────────────────────────────────
-SHOW_DEBUG_WINDOW   = True
+# The standalone cv2 desktop window ("Yogurt Inspection — AI Diagnostics") is
+# disabled in production. The same composited frame is still published to
+# :5003/ai_stream and consumed by the worker dashboard's AI DIAGNOSIS panel,
+# so the operator-facing view stays unchanged. Set to True only when debugging
+# the AI pipeline directly on the line PC (e.g. checking why YOLO is missing
+# the barcode without having to open the browser).
+SHOW_DEBUG_WINDOW   = False
 DISPLAY_WINDOW_NAME = "Yogurt Inspection — AI Diagnostics"
 
 # ── State machine ─────────────────────────────────────────────────────────────

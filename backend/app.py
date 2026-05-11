@@ -422,6 +422,11 @@ def main() -> None:
         final_class   = "NORMAL" if defect_type is None else "DEFECTIVE"
         overall_conf  = best["overall_conf"] if best else 0.0
 
+        # Surface the verdict + defect_type on the AI Diagnostics panel.
+        with result_lock:
+            shared_result.final_label = "ok" if final_class == "NORMAL" else "defective"
+            shared_result.defect_type = defect_type
+
         threading.Thread(
             target=robot.post_result_to_backend,
             args=(

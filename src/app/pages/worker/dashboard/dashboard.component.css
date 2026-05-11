@@ -208,7 +208,8 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* ── Topbar ─────────────────────────────────────────── */
@@ -415,26 +416,33 @@
 /* ── Left column ─────────────────────────────────── */
 .left-col {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   gap: 10px;
   align-items: stretch;
-  flex: 1.6;
+  flex: 2.4;
   min-width: 0;
   overflow: hidden;
 }
 
 .left-col .camera-panel {
-  flex: 1.4;
+  flex: 0 0 auto;
   min-width: 0;
 }
 
 .left-right-stack {
   flex: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 10px;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
+}
+.left-right-stack > * {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .left-right-stack .insp-panel {
@@ -498,16 +506,40 @@
   flex-direction: column;
 }
 
+.camera-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 7px;
+}
+
 .camera-box {
   position: relative;
   width: 100%;
-  height: calc(100vh - 320px);
-  min-height: 220px;
-  max-height: 420px;
+  height: 50vh;
+  min-height: 320px;
+  max-height: 560px;
   background: #060a14;
   border-radius: 4px;
   overflow: hidden;
-  margin-bottom: 7px;
+  border: 1px solid rgba(255,255,255,.04);
+}
+
+.cam-tag {
+  position: absolute; top: 8px; left: 8px; z-index: 4;
+  background: rgba(0, 0, 0, .72);
+  color: #cfd6e4;
+  font-family: var(--font-data, monospace);
+  font-size: 10px; font-weight: 700;
+  letter-spacing: .12em;
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,.08);
+}
+.cam-tag-bc {
+  color: #ffd166;
+  border-color: rgba(255, 209, 102, .35);
 }
 
 .c-tl,.c-tr,.c-bl,.c-br {
@@ -660,6 +692,17 @@
 }
 .insp-date {
   font-size: 11px; font-weight: 700; font-family: var(--font-data); margin-top: 2px;
+}
+.insp-barcode {
+  font-size: 11px; font-weight: 700; font-family: var(--font-data); margin-top: 4px;
+  word-break: break-all;
+}
+.insp-defect {
+  display: inline-block; margin-top: 4px;
+  font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  color: var(--red); background: var(--red-dim);
+  padding: 2px 6px; border-radius: 3px;
+  text-transform: uppercase;
 }
 .insp-label {
   font-size: 11px; font-weight: 700; letter-spacing: .08em;

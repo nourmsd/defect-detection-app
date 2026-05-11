@@ -1236,6 +1236,56 @@
 .tl-container { padding: 24px 20px 12px; overflow-x: auto; }
 .tl-hour-labels { display: flex; justify-content: space-between; margin-bottom: 8px; }
 .tl-hour-label { font-size: 10px; color: var(--text-muted); font-family: var(--font-data); flex: 1; text-align: center; }
+.tl-hour-clickable { cursor: pointer; padding: 4px 0; border-radius: 4px; transition: all var(--transition); user-select: none; }
+.tl-hour-clickable:hover { color: var(--accent); background: var(--accent-dim); }
+.tl-hour-active { color: var(--accent); background: var(--accent-dim); font-weight: 700; }
+
+/* ── Hour zoom panel ─────────────────────────────────────────── */
+.tl-hour-zoom {
+  margin: 16px 20px 0;
+  padding: 16px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--bg-card-alt);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+.tl-hour-zoom-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.tl-hour-zoom-title { display: flex; align-items: center; gap: 10px; }
+.tl-hour-zoom-title h3 { margin: 0; font-size: 18px; color: var(--accent); font-family: var(--font-data); }
+.tl-hour-zoom-title mat-icon { color: var(--accent); }
+.tl-hour-zoom-count { font-size: 11px; color: var(--text-muted); padding: 3px 8px; background: var(--bg-card); border-radius: 10px; }
+.tl-zoom-close {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: transparent; color: var(--text-secondary); cursor: pointer;
+  transition: all var(--transition);
+}
+.tl-zoom-close:hover { background: var(--red-dim); color: var(--red); border-color: var(--red); }
+.tl-zoom-close mat-icon { font-size: 18px; width: 18px; height: 18px; }
+.tl-hour-zoom-body { padding: 8px 4px; }
+.tl-hour-minute-labels { display: flex; justify-content: space-between; margin-bottom: 12px; }
+.tl-hour-minute-label { font-size: 10px; color: var(--text-muted); font-family: var(--font-data); flex: 1; text-align: center; }
+.tl-hour-track {
+  position: relative; height: 140px; min-width: 600px;
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 0 6px;
+}
+.tl-hour-track .tl-baseline { top: 50px; }
+.tl-hour-tick {
+  position: absolute; top: 40px; width: 1px; height: 24px;
+  background: var(--border);
+}
+.tl-marker-big .tl-marker-dot { width: 20px; height: 20px; margin-top: 42px; }
+.tl-marker-big .tl-marker-line { height: 28px; width: 3px; }
+.tl-marker-big .tl-marker-label { font-size: 12px; margin-top: 4px; }
+.tl-marker-big .tl-marker-label small { font-size: 11px; color: var(--accent); }
+.tl-hour-empty { padding: 30px 0; }
 .tl-track { position: relative; height: 80px; min-width: 600px; }
 .tl-baseline { position: absolute; top: 28px; left: 0; right: 0; height: 4px; background: var(--border); border-radius: 2px; }
 .tl-marker { position: absolute; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; cursor: pointer; }
@@ -1245,6 +1295,86 @@
 .tl-marker-yellow { color: #eab308; }
 .tl-marker-green  { color: var(--green); }
 .tl-marker-red    { color: var(--red); }
+
+/* ── Continuous colored band ─────────────────────────────────── */
+.tl-track-band { height: 100px; }
+.tl-band {
+  position: absolute; left: 0; right: 0; top: 40px;
+  height: 22px;
+  background: var(--bg-card-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.tl-band-big { height: 32px; top: 54px; }
+.tl-band-seg {
+  position: absolute; top: 0; bottom: 0;
+  transition: filter var(--transition);
+}
+.tl-band-seg:hover { filter: brightness(1.2); }
+.tl-band-yellow { background: #eab308; }
+.tl-band-green  { background: var(--green); }
+.tl-band-red    { background: var(--red); }
+
+.tl-tick {
+  position: absolute; top: 0;
+  display: flex; flex-direction: column; align-items: center;
+  cursor: pointer; pointer-events: auto;
+  transform: translateX(-50%);
+}
+.tl-tick-line {
+  width: 2px; height: 38px;
+  background: var(--text-primary);
+  opacity: .65;
+}
+.tl-tick-big .tl-tick-line { height: 54px; width: 3px; }
+.tl-tick-label {
+  position: absolute; top: 64px;
+  font-size: 10px; color: var(--text-secondary);
+  white-space: nowrap; line-height: 1.2;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 6px;
+  pointer-events: none;
+  transform: translateX(-50%);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tl-tick-label small { display: block; color: var(--accent); font-size: 9px; margin-top: 1px; }
+/* Alternate the label position so neighboring ticks don't pile up */
+.tl-tick:nth-child(even) .tl-tick-label { top: 92px; }
+.tl-tick-big .tl-tick-label { top: 92px; font-size: 12px; }
+.tl-tick-big:nth-child(even) .tl-tick-label { top: 130px; }
+.tl-tick-yellow .tl-tick-line { background: #eab308; }
+.tl-tick-green  .tl-tick-line { background: var(--green); }
+.tl-tick-red    .tl-tick-line { background: var(--red); }
+/* Reserve room below the band for stacked labels (two rows) */
+.tl-track-band { height: 170px; padding-bottom: 40px; }
+
+/* Live "now" cursor over the band */
+.tl-now-cursor {
+  position: absolute; top: 32px; bottom: 30px;
+  width: 2px; background: var(--accent);
+  transform: translateX(-50%);
+  z-index: 4; pointer-events: auto;
+  box-shadow: 0 0 6px var(--accent);
+}
+.tl-now-cursor::before {
+  content: ''; position: absolute; top: -4px; left: -4px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+.tl-now-label {
+  position: absolute; top: -18px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px; font-weight: 700; letter-spacing: .1em;
+  color: var(--accent); text-transform: uppercase;
+  font-family: var(--font-data);
+}
+.tl-now-cursor-big { top: 46px; }
 .tl-event-list { padding: 12px 20px; border-top: 1px solid var(--border); }
 .tl-event-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
 .tl-event-row:last-child { border-bottom: none; }

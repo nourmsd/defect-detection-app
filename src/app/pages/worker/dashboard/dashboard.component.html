@@ -42,6 +42,13 @@
           <span class="sys-tag" [class.tag-on]="streamHealth.pyniryo_available">{{ streamHealth.pyniryo_available ? 'OK' : 'OFF' }}</span>
         </ng-container>
       </div>
+      <div class="sys-item">
+        <span class="sys-dot" [class.sys-on]="plcConnected" [class.sys-off]="!plcConnected"></span>
+        <ng-container *ngIf="!sidebarCollapsed">
+          <span class="sys-name">PLC</span>
+          <span class="sys-tag" [class.tag-on]="plcConnected">{{ plcConnected ? 'ON' : 'OFF' }}</span>
+        </ng-container>
+      </div>
     </div>
 
     <!-- Live AI Pipeline -->
@@ -223,24 +230,43 @@
               LIVE CAMERA FEED
               <span class="fps-tag">{{ streamHealth.avg_fps > 0 ? (streamHealth.avg_fps | number:'1.0-1') : (fps > 0 ? fps : '0.0') }} FPS</span>
             </div>
-            <div class="camera-box">
-              <span class="c-tl"></span><span class="c-tr"></span>
-              <span class="c-bl"></span><span class="c-br"></span>
-              <img class="stream-img" [src]="cameraStreamUrl" [class.hidden]="!streamActive"
-                (load)="onStreamLoad()" (error)="onStreamError()" alt="camera">
-              <div class="cam-placeholder" [class.hidden]="streamActive">
-                <mat-icon>videocam_off</mat-icon>
-                <span>{{ streamHealth.camera_status }}</span>
-                <span class="cam-sub">{{ streamHealth.status }}</span>
+            <div class="camera-split">
+              <!-- Main AI diagnostic feed (robot camera) -->
+              <div class="camera-box">
+                <span class="c-tl"></span><span class="c-tr"></span>
+                <span class="c-bl"></span><span class="c-br"></span>
+                <div class="cam-tag">AI DIAGNOSIS</div>
+                <img class="stream-img" [src]="cameraStreamUrl" [class.hidden]="!streamActive"
+                  (load)="onStreamLoad()" (error)="onStreamError()" alt="camera">
+                <div class="cam-placeholder" [class.hidden]="streamActive">
+                  <mat-icon>videocam_off</mat-icon>
+                  <span>{{ streamHealth.camera_status }}</span>
+                  <span class="cam-sub">{{ streamHealth.status }}</span>
+                </div>
+                <div class="scanline"></div>
+                <div class="model-badge"
+                  [class.badge-ok]="detectionStatus === 'NORMAL'"
+                  [class.badge-nok]="detectionStatus === 'DEFECTIVE'">
+                  <mat-icon *ngIf="detectionStatus === 'WAITING'">hourglass_empty</mat-icon>
+                  <mat-icon *ngIf="detectionStatus === 'NORMAL'">check_circle</mat-icon>
+                  <mat-icon *ngIf="detectionStatus === 'DEFECTIVE'">warning</mat-icon>
+                  <span>{{ detectionStatus === 'NORMAL' ? 'CONFORMING' : detectionStatus }}</span>
+                </div>
               </div>
-              <div class="scanline"></div>
-              <div class="model-badge"
-                [class.badge-ok]="detectionStatus === 'NORMAL'"
-                [class.badge-nok]="detectionStatus === 'DEFECTIVE'">
-                <mat-icon *ngIf="detectionStatus === 'WAITING'">hourglass_empty</mat-icon>
-                <mat-icon *ngIf="detectionStatus === 'NORMAL'">check_circle</mat-icon>
-                <mat-icon *ngIf="detectionStatus === 'DEFECTIVE'">warning</mat-icon>
-                <span>{{ detectionStatus === 'NORMAL' ? 'CONFORMING' : detectionStatus }}</span>
+
+              <!-- Barcode (DroidCam) feed with YOLO overlay -->
+              <div class="camera-box">
+                <span class="c-tl"></span><span class="c-tr"></span>
+                <span class="c-bl"></span><span class="c-br"></span>
+                <div class="cam-tag cam-tag-bc">BARCODE CAM</div>
+                <img class="stream-img" [src]="barcodeStreamUrl" [class.hidden]="!barcodeStreamActive"
+                  (load)="onBarcodeStreamLoad()" (error)="onBarcodeStreamError()" alt="barcode">
+                <div class="cam-placeholder" [class.hidden]="barcodeStreamActive">
+                  <mat-icon>qr_code_scanner</mat-icon>
+                  <span>Barcode stream offline</span>
+                  <span class="cam-sub">Waiting for DroidCam…</span>
+                </div>
+                <div class="scanline"></div>
               </div>
             </div>
             <div class="cam-meta">
@@ -319,6 +345,9 @@
                       {{ detectionStatus === 'NORMAL' ? 'CONFORMING' : detectionStatus }}
                     </span>
                     <span class="insp-label">RESULT</span>
+                    <span class="insp-defect" *ngIf="detectionStatus === 'DEFECTIVE' && lastDefectType">
+                      {{ defectTypeLabel() }}
+                    </span>
                   </div>
                 </div>
 
@@ -352,6 +381,12 @@
                       {{ lastDetectedDate !== 'missing' ? lastDetectedDate : '— none —' }}
                     </span>
                     <span class="insp-label">EXPIRY DATE</span>
+                    <span class="insp-barcode"
+                      [class.val-green]="lastBarcode"
+                      [class.val-muted]="!lastBarcode">
+                      {{ lastBarcode || '— none —' }}
+                    </span>
+                    <span class="insp-label">BARCODE</span>
                   </div>
                 </div>
 

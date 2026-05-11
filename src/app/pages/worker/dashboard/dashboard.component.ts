@@ -72,6 +72,8 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   detectionStatus: 'WAITING' | 'NORMAL' | 'DEFECTIVE' = 'WAITING';
   lastDetectionTime = '--:--:--';
   lastDetectedDate = 'missing';
+  lastDefectType: string | null = null;
+  lastBarcode: string | null = null;
 
   /* ── Live inference (per-cycle AI state) ───────────────── */
   inferenceStatus = 'IDLE';
@@ -84,6 +86,8 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   /* ── Camera / stream ───────────────────────────────────── */
   cameraStreamUrl = '';
   streamActive = false;
+  barcodeStreamUrl = '';
+  barcodeStreamActive = false;
   streamHealth: StreamHealth = this.defaultStreamHealth();
 
   /* ── System status ─────────────────────────────────────── */
@@ -91,6 +95,7 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
 
   /* ── Robot status (basic) ──────────────────────────────── */
   isRobotConnected = false;
+  plcConnected = false;
   jointPositions: number[] = [];
 
   /* ── Robot status (extended) ───────────────────────────── */
@@ -125,7 +130,9 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   actionSuccess = true;
 
   /* ── Internal ───────────────────────────────────────────── */
-  private readonly STREAM_BASE_PORT = 5001;
+  private readonly STREAM_BASE_PORT = 5003;
+  private readonly BARCODE_STREAM_PORT = 5003;
+  private barcodeRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly STREAM_RETRY_MS = 4000;
   private readonly POLL_MS = 3000;
   private readonly ROBOT_OFFLINE_FAILURE_THRESHOLD = 2;
@@ -502,6 +509,18 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     }
     if (inspection.processing_time != null) this.lastProcessingTime = inspection.processing_time;
     if (inspection.expiry_date != null) this.lastDetectedDate = inspection.expiry_date;
+    this.lastDefectType = (inspection as any).defect_type || null;
+    this.lastBarcode = (inspection as any).barcode || null;
+  }
+
+  defectTypeLabel(): string {
+    if (!this.lastDefectType) return '';
+    const map: Record<string, string> = {
+      absent: 'Absent / no date',
+      blurry: 'Blurry / unreadable',
+      expired: 'Expired',
+    };
+    return map[this.lastDefectType] || this.lastDefectType;
   }
 
   /* ════════════════════════════════════════════════════════
@@ -540,6 +559,7 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   private applySystemHealth(health: SystemHealthSocketPayload): void {
     this.fps = Number(health?.fps) || 0;
     this.systemLinks.camera = health?.stream !== 'offline';
+    this.plcConnected = Boolean((health as any)?.plc === 'online' || (health as any)?.plc === true);
     this.streamHealth = {
       ...this.streamHealth,
       status: health?.stream || 'offline',
@@ -565,7 +585,12 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   }
 
   private refreshStreamUrl(): void {
-    this.cameraStreamUrl = `http://${this.streamHost}:${this.STREAM_BASE_PORT}/stream?t=${Date.now()}`;
+    this.cameraStreamUrl = `http://${this.streamHost}:${this.STREAM_BASE_PORT}/ai_stream?t=${Date.now()}`;
+    this.refreshBarcodeStreamUrl();
+  }
+
+  private refreshBarcodeStreamUrl(): void {
+    this.barcodeStreamUrl = `http://${this.streamHost}:${this.BARCODE_STREAM_PORT}/barcode_stream?t=${Date.now()}`;
   }
 
   onStreamLoad(): void {
@@ -579,6 +604,18 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     if (this.streamRetryTimer) clearTimeout(this.streamRetryTimer);
     this.streamRetryTimer = setTimeout(() => {
       this.ngZone.run(() => this.refreshStreamUrl());
+    }, this.STREAM_RETRY_MS);
+  }
+
+  onBarcodeStreamLoad(): void {
+    this.barcodeStreamActive = true;
+  }
+
+  onBarcodeStreamError(): void {
+    this.barcodeStreamActive = false;
+    if (this.barcodeRetryTimer) clearTimeout(this.barcodeRetryTimer);
+    this.barcodeRetryTimer = setTimeout(() => {
+      this.ngZone.run(() => this.refreshBarcodeStreamUrl());
     }, this.STREAM_RETRY_MS);
   }
 
@@ -664,6 +701,7 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     if (this.streamRetryTimer) clearTimeout(this.streamRetryTimer);
+    if (this.barcodeRetryTimer) clearTimeout(this.barcodeRetryTimer);
     if (this.clockTimer) clearInterval(this.clockTimer);
     this.jMovingTimers.forEach(t => { if (t) clearTimeout(t); });
     this.subscriptions.unsubscribe();
