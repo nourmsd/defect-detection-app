@@ -88,6 +88,15 @@
           <span class="ai-stat-lbl">MS</span>
           <span class="ai-stat-val">{{ inferenceMs > 0 ? inferenceMs + 'ms' : '—' }}</span>
         </div>
+        <div class="ai-stat-row" *ngIf="lastBarcode || pendingBarcode">
+          <span class="ai-stat-lbl">BC</span>
+          <span class="ai-stat-val ai-stat-bc"
+            [class.val-green]="lastBarcode"
+            [class.val-amber]="!lastBarcode && pendingBarcode"
+            [title]="lastBarcode || pendingBarcode || ''">
+            {{ lastBarcode || pendingBarcode }}
+          </span>
+        </div>
       </div>
     </div>
 
@@ -216,6 +225,13 @@
                 <span class="c-tl"></span><span class="c-tr"></span>
                 <span class="c-bl"></span><span class="c-br"></span>
                 <div class="cam-tag">AI DIAGNOSIS</div>
+                <div class="cam-bc-tag"
+                     *ngIf="lastBarcode || pendingBarcode"
+                     [class.cam-bc-tag-pending]="!lastBarcode && pendingBarcode"
+                     [title]="lastBarcode || pendingBarcode || ''">
+                  <mat-icon>qr_code_2</mat-icon>
+                  <span>#{{ lastBarcode || pendingBarcode }}</span>
+                </div>
                 <img class="stream-img" [src]="cameraStreamUrl" [class.hidden]="!streamActive"
                   (load)="onStreamLoad()" (error)="onStreamError()" alt="camera">
                 <div class="cam-placeholder" [class.hidden]="streamActive">
@@ -247,6 +263,12 @@
                   <span class="cam-sub">Waiting for DroidCam…</span>
                 </div>
                 <div class="scanline"></div>
+                <div class="bc-decoded-badge"
+                     *ngIf="lastBarcode || pendingBarcode"
+                     [class.bc-decoded-pending]="!lastBarcode && pendingBarcode">
+                  <mat-icon>qr_code_2</mat-icon>
+                  <span>#{{ lastBarcode || pendingBarcode }}</span>
+                </div>
               </div>
             </div>
             <div class="cam-meta">

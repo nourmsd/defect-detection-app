@@ -12,6 +12,19 @@ import numpy as np
 
 # Re-export PoseObject so the pose constants below can be used directly.
 from pyniryo import PoseObject  # noqa: F401
+try:
+    import snap7
+    import snap7.client  # type: ignore[import]
+    from snap7.util import set_bool  # type: ignore[import]
+    import snap7.util   # type: ignore[import]
+    import snap7.types  # type: ignore[import]
+    import snap7.exceptions  # type: ignore[import]
+    _SNAP7_AVAILABLE = True
+except ImportError:
+    snap7 = None  # type: ignore[assignment]
+    _SNAP7_AVAILABLE = False
+
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -39,6 +52,19 @@ AI_STREAM_PORT    = int(os.environ.get("AI_STREAM_PORT", "5003"))
 # ── Robot HTTP service ────────────────────────────────────────────────────────
 ROBOT_IP           = os.environ.get("ROBOT_IP", "10.10.10.10")
 ROBOT_SERVICE_PORT = int(os.environ.get("ROBOT_SERVICE_PORT", "5002"))
+# rosbridge_websocket runs on the Niryo Ned 2's onboard ROS stack — used to
+# invoke services that pyniryo's TCP API doesn't expose (e.g. reboot_motors).
+ROBOT_ROSBRIDGE_PORT = int(os.environ.get("ROBOT_ROSBRIDGE_PORT", "9090"))
+# Name of the saved Blockly program on the robot that handles the defective-
+# product pick-and-place. Uploaded once via Niryo Studio; we invoke it via
+# rosbridge each time a defective item is dequeued. Bypasses the pyniryo /
+# firmware version mismatch on Niryo One firmware running Ned 2 blocks.
+ROBOT_DEFECTIVE_PROGRAM = os.environ.get("ROBOT_DEFECTIVE_PROGRAM", "yog1")
+# niryo_robot_programs_manager/ProgramLanguage enum:
+#   NONE=-1, ALL=0, PYTHON2=1, PYTHON3=2, BLOCKLY=66 (BLOCKLY is "Not Runnable"
+#   per the open-source .msg definition — the program must be saved as Python
+#   on the robot for the execute_program service to run it).
+ROBOT_DEFECTIVE_PROGRAM_LANGUAGE = int(os.environ.get("ROBOT_DEFECTIVE_PROGRAM_LANGUAGE", "2"))
 BACKEND_URL        = os.environ.get("BACKEND_URL", "http://127.0.0.1:5000")
 STREAM_SERVICE_URL = os.environ.get("STREAM_SERVICE_URL", "http://127.0.0.1:5001")
 
@@ -111,35 +137,34 @@ DROIDCAM_URL       = os.environ.get("DROIDCAM_URL", "http://10.10.10.115:4747/vi
 BARCODE_CLASS_NAME = "barcode"
 BARCODE_CONF       = 0.30
 
-# # ── PLC (Siemens via Snap7) ──────────────────────────────────────────────────
-# PLC_IP        = os.environ.get("PLC_IP", "192.168.0.1")
-# PLC_DB_NUMBER = int(os.environ.get("PLC_DB_NUMBER", "1"))
-# PLC_RACK      = int(os.environ.get("PLC_RACK", "0"))
-# PLC_SLOT      = int(os.environ.get("PLC_SLOT", "1"))
-# Bit offsets inside DB1.DBX0.x — change to match your TIA project
-# PLC_BIT_CONFORM   = int(os.environ.get("PLC_BIT_CONFORM",   "0"))   # advance conveyor
-# PLC_BIT_DEFECTIVE = int(os.environ.get("PLC_BIT_DEFECTIVE", "1"))   # optional reject signal
+ # ── PLC (Siemens via Snap7) ──────────────────────────────────────────────────
+PLC_IP        = os.environ.get("PLC_IP", "192.168.0.1")
+PLC_DB_NUMBER = int(os.environ.get("PLC_DB_NUMBER", "1"))
+PLC_RACK      = int(os.environ.get("PLC_RACK", "0"))
+PLC_SLOT      = int(os.environ.get("PLC_SLOT", "1"))
+PLC_BIT_CONFORM   = int(os.environ.get("PLC_BIT_CONFORM",   "0"))   # advance conveyor
+PLC_BIT_DEFECTIVE = int(os.environ.get("PLC_BIT_DEFECTIVE", "1"))   # optional reject signal
 
-# _plc_client = snap7.client.Client() if _SNAP7_AVAILABLE else None
-# _plc_lock   = threading.Lock()
+_plc_client = snap7.client.Client() if _SNAP7_AVAILABLE else None
+_plc_lock   = threading.Lock()
 
 
-# def plc_send_command(offset_bit: int) -> None:
-#     """Set DB<PLC_DB_NUMBER>.DBX0.<offset_bit> high. Lazy connects on first use,
-#     serialises calls behind a lock, and silently no-ops if snap7 is missing."""
-#     if not _SNAP7_AVAILABLE or _plc_client is None:
-#         log.warning(f"[PLC] snap7 not installed — skipping bit 0.{offset_bit}")
-#         return
-#     with _plc_lock:
-#         try:
-#             if not _plc_client.get_connected():
-#                 _plc_client.connect(PLC_IP, PLC_RACK, PLC_SLOT)
-#             data = _plc_client.db_read(PLC_DB_NUMBER, 0, 1)
-#             set_bool(data, 0, offset_bit, True)
-#             _plc_client.db_write(PLC_DB_NUMBER, 0, data)
-#             log.info(f"[PLC] Set DB{PLC_DB_NUMBER}.DBX0.{offset_bit} = TRUE")
-#         except Exception as exc:
-#             log.warning(f"[PLC] Communication error on bit 0.{offset_bit}: {exc}")
+def plc_send_command(offset_bit: int) -> None:
+     """Set DB<PLC_DB_NUMBER>.DBX0.<offset_bit> high. Lazy connects on first use,
+     serialises calls behind a lock, and silently no-ops if snap7 is missing."""
+     if not _SNAP7_AVAILABLE or _plc_client is None:
+         log.warning(f"[PLC] snap7 not installed — skipping bit 0.{offset_bit}")
+         return
+     with _plc_lock:
+         try:
+             if not _plc_client.get_connected():
+                 _plc_client.connect(PLC_IP, PLC_RACK, PLC_SLOT)
+             data = _plc_client.db_read(PLC_DB_NUMBER, 0, 1)
+             set_bool(data, 0, offset_bit, True)
+             _plc_client.db_write(PLC_DB_NUMBER, 0, data)
+             log.info(f"[PLC] Set DB{PLC_DB_NUMBER}.DBX0.{offset_bit} = TRUE")
+         except Exception as exc:
+             log.warning(f"[PLC] Communication error on bit 0.{offset_bit}: {exc}")
 
 
 # ── Pipeline B — Expiry date (ResNet multi-head classifier) ──────────────────

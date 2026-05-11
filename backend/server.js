@@ -150,7 +150,14 @@ async function handlePipelineStructuredEvent(msg, io) {
     const result = await inspectionController.persistInspectionAndBroadcast(payload, io, {
       transport: 'pipeline-stdout',
     });
-    notifyRobotService(result).catch(() => {});
+    // Defective items coming from the AI pipeline (transport=pipeline-stdout)
+    // are ALREADY queued for pick-and-place directly by app.py's
+    // processing_thread — see the `Defective queued for pick-and-place`
+    // log line. Calling notifyRobotService here would POST /inspection-result
+    // and queue the SAME physical cup a second time under its barcode id,
+    // making the robot run the pick program twice in a row. We keep
+    // notifyRobotService for HTTP-posted inspections only (external sources)
+    // by funnelling it through logInspection in inspectionController.
   }
 
   if (type === 'robot_alert' || type === 'system_health') {

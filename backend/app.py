@@ -69,6 +69,10 @@ from config import (
     SHOW_DEBUG_WINDOW, DISPLAY_WINDOW_NAME,
     DROIDCAM_URL, BARCODE_CLASS_NAME, BARCODE_CONF,
     PIPELINE_EVENT_PREFIX,
+    plc_send_command,
+    PLC_BIT_CONFORM,
+    PLC_BIT_DEFECTIVE,
+    _plc_client
 )
 
 import robot   # qualified access for shared mutable globals
@@ -250,7 +254,20 @@ def main() -> None:
     # `pending_barcode_cleared`.
     _pending_bc_slot:    Dict[str, Optional[str]] = {"text": None, "type": None}
     _pending_bc_lock:    threading.Lock           = threading.Lock()
-    _bc_prescan_state:   Dict[str, Optional[str]] = {"last_decoded": None}
+    # State for the prescan loop. `last_decoded` is the dedupe key so we don't
+    # spam pending_barcode for every frame of the same cup. `idle` flips to
+    # True after we've captured a barcode AND seen `ABSENT_FRAMES_THRESHOLD`
+    # consecutive frames with no YOLO bbox (i.e. the operator has moved the
+    # cup off the phone camera toward the conveyor) — while idle we skip the
+    # heavy YOLO+pyzbar pipeline entirely and just nap until the gather loop
+    # consumes the slot, at which point _clear_pending_barcode re-arms us.
+    # `absent_streak` counts consecutive bbox-less frames toward the idle
+    # transition.
+    _bc_prescan_state: Dict[str, Optional[object]] = {
+        "last_decoded":  None,
+        "idle":          False,
+        "absent_streak": 0,
+    }
 
     def _emit_pipeline_event(event_type: str, payload: Dict) -> None:
         try:
@@ -280,15 +297,19 @@ def main() -> None:
             had = _pending_bc_slot["text"]
             _pending_bc_slot["text"] = None
             _pending_bc_slot["type"] = None
-        # Reset the prescan dedupe key so the next scan (even of the same
-        # barcode on a different physical product) fires a fresh event.
-        _bc_prescan_state["last_decoded"] = None
+        # Re-arm the prescan loop so the next product to pass under the
+        # phone camera fires a fresh capture event. Reset both the dedupe
+        # key (so the same barcode on a new physical product fires) and
+        # the idle flag (so the YOLO+pyzbar pipeline starts running again).
+        _bc_prescan_state["last_decoded"]  = None
+        _bc_prescan_state["idle"]          = False
+        _bc_prescan_state["absent_streak"] = 0
         if had:
             _emit_pipeline_event("pending_barcode_cleared", {
                 "reason": reason,
                 "timestamp": datetime.now().astimezone().isoformat(),
             })
-            log.info(f"[pending-barcode] cleared ({reason}): was {had!r}")
+            log.info(f"[pending-barcode] cleared ({reason}): was {had!r} — prescan re-armed")
 
     def _peek_pending_barcode() -> Tuple[Optional[str], Optional[str]]:
         with _pending_bc_lock:
@@ -297,35 +318,69 @@ def main() -> None:
     _prescan_alive = {"v": True}
 
     def _barcode_prescan_loop():
-        """Continuously decode barcodes from the DroidCam feed and publish a
-        `pending_barcode` event the moment a new one is captured. The slot
-        persists until either (a) the gather loop consumes it for an actual
-        inspection, or (b) a different barcode replaces it. We do NOT auto-
-        clear on the phone-cam going empty — between scan-time and the
-        product reaching the niryo inspection pose there is always a window
-        where the phone-cam is empty, and clearing during that window would
-        destroy the captured barcode."""
-        period = 1.0 / 2.0  # 2 Hz — pyzbar+YOLO is heavy, no need to go faster
+        """Three-state pre-scan over the DroidCam feed:
+
+          ARMED + slot empty     → scan; publish pending_barcode on decode
+          ARMED + slot populated → keep scanning (operator may swap cup);
+                                   count consecutive empty frames toward
+                                   ABSENT_FRAMES_THRESHOLD
+          IDLE  (after N absent) → skip YOLO+pyzbar entirely, nap until
+                                   the gather loop calls
+                                   _clear_pending_barcode() and re-arms us
+
+        Industrial intent: once the operator has held the cup under the
+        phone camera long enough to decode the barcode and then removed it
+        toward the conveyor, the cycle does no further work until the AI
+        inspection on the conveyor completes. No CPU spent decoding empty
+        frames between products."""
+        ARMED_PERIOD            = 0.5    # 2 Hz while scanning
+        IDLE_PERIOD             = 1.5    # 0.67 Hz while waiting for consume
+        ABSENT_FRAMES_THRESHOLD = 8      # frames with no bbox -> go IDLE
+
         while _prescan_alive["v"]:
+            # ── IDLE: just sleep until _clear_pending_barcode re-arms us. ──
+            if _bc_prescan_state["idle"]:
+                time.sleep(IDLE_PERIOD)
+                continue
+
+            # ── ARMED: pull a frame, run the pipeline. ────────────────────
             t0 = time.perf_counter()
             latest = barcode_grabber.get_latest()
             if latest is None:
                 time.sleep(0.5)
                 continue
             frame, _ = latest
+
             try:
-                text, btype, _, _ = run_barcode_pipeline(frame, yolo)
+                text, btype, bbox, _ = run_barcode_pipeline(frame, yolo)
             except Exception as exc:
                 log.debug(f"[barcode-prescan] decode error: {exc}")
-                text, btype = None, None
+                text, btype, bbox = None, None, None
 
             if text and text != _bc_prescan_state["last_decoded"]:
-                _bc_prescan_state["last_decoded"] = text
+                _bc_prescan_state["last_decoded"]  = text
+                _bc_prescan_state["absent_streak"] = 0
                 _set_pending_barcode(text, btype)
+            elif _pending_bc_slot["text"] is not None:
+                # We already have a captured barcode AND nothing visible
+                # this frame -> count toward the IDLE transition.
+                if bbox is None:
+                    _bc_prescan_state["absent_streak"] = int(
+                        _bc_prescan_state["absent_streak"]) + 1
+                    if int(_bc_prescan_state["absent_streak"]) >= ABSENT_FRAMES_THRESHOLD:
+                        _bc_prescan_state["idle"] = True
+                        log.info(
+                            f"[pending-barcode] phone-cam idle after "
+                            f"{ABSENT_FRAMES_THRESHOLD} absent frames — pausing "
+                            f"prescan, waiting for AI to consume "
+                            f"'{_pending_bc_slot['text']}'"
+                        )
+                else:
+                    _bc_prescan_state["absent_streak"] = 0
 
             elapsed = time.perf_counter() - t0
-            if elapsed < period:
-                time.sleep(period - elapsed)
+            if elapsed < ARMED_PERIOD:
+                time.sleep(ARMED_PERIOD - elapsed)
 
     threading.Thread(target=_barcode_prescan_loop, daemon=True,
                      name="barcode-prescan").start()
@@ -571,12 +626,12 @@ def main() -> None:
         # Voice announcement
         robot._say("normal product" if final_class == "NORMAL" else "defective product")
 
-# # PLC trigger — conform products advance the conveyor; defective ones
+        # PLC trigger — conform products advance the conveyor; defective ones
         # optionally raise a separate reject bit (the robot still does the pick).
-#         if final_class == "NORMAL":
-#             plc_send_command(PLC_BIT_CONFORM)
-#         else:
-#             plc_send_command(PLC_BIT_DEFECTIVE)
+        if final_class == "NORMAL":
+             plc_send_command(PLC_BIT_CONFORM)
+        else:
+            plc_send_command(PLC_BIT_DEFECTIVE)
 
         with result_lock:
             shared_result.done = True
@@ -723,7 +778,7 @@ def main() -> None:
                             )
                             _clear_pending_barcode(reason="consumed")
                             robot._say("defective product")
-#                             plc_send_command(PLC_BIT_DEFECTIVE)
+                            plc_send_command(PLC_BIT_DEFECTIVE)
 
                             # Queue robot pick-and-place
                             try:
@@ -804,13 +859,13 @@ def main() -> None:
             _barcode_display_alive["v"] = False
         except Exception:
             pass
-#         if _plc_client is not None:
-#             try:
-#                 if _plc_client.get_connected():
-#                     _plc_client.disconnect()
-#                     log.info("[PLC] Disconnected")
-#             except Exception as exc:
-#                 log.debug(f"[PLC] Disconnect: {exc}")
+        if _plc_client is not None:
+             try:
+                 if _plc_client.get_connected():
+                     _plc_client.disconnect()
+                     log.info("[PLC] Disconnected")
+             except Exception as exc:
+                 log.debug(f"[PLC] Disconnect: {exc}")
         cv2.destroyAllWindows()
 
 

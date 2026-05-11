@@ -138,6 +138,29 @@ _ai_latest_frame: Optional[bytes] = None
 _barcode_frame_lock:    threading.Lock         = threading.Lock()
 _barcode_latest_frame:  Optional[bytes]        = None
 
+# Pre-scan barcode slot, populated by app.py's prescan loop. The diagnostic
+# panel reads this when the niryo gripper-cam couldn't decode (the usual case
+# — the cup's wrap-around barcode rarely faces the gripper), so the BARCODE
+# line on the AI stream still shows the value the operator scanned with the
+# phone camera before placing the cup on the conveyor.
+_prescan_barcode_lock:  threading.Lock          = threading.Lock()
+_prescan_barcode_text:  Optional[str]           = None
+_prescan_barcode_type:  Optional[str]           = None
+
+
+def set_prescan_barcode(text: Optional[str], btype: Optional[str] = None) -> None:
+    """Called by app.py whenever the prescan slot changes — keeps the AI
+    diagnostic overlay in sync with what the dashboard shows."""
+    global _prescan_barcode_text, _prescan_barcode_type
+    with _prescan_barcode_lock:
+        _prescan_barcode_text = text
+        _prescan_barcode_type = btype
+
+
+def get_prescan_barcode() -> Tuple[Optional[str], Optional[str]]:
+    with _prescan_barcode_lock:
+        return _prescan_barcode_text, _prescan_barcode_type
+
 
 @ai_app.route("/ai_stream")
 def _ai_stream_route():
@@ -848,32 +871,27 @@ def build_display(
                 cv2.FONT_HERSHEY_SIMPLEX, 0.42, (110,110,110), 1, cv2.LINE_AA)
     cv2.putText(panel, f"STATE: {state}", (pad,40),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.40, (160,160,160), 1, cv2.LINE_AA)
+    py = 56
     # Final classification banner (only set once gather completes)
     if result.final_label is not None:
         is_ok = result.final_label == "ok"
         verdict_color = _COLOR_VALID if is_ok else _COLOR_DEFECT
         verdict_txt   = "CONFORMING" if is_ok else "DEFECTIVE"
-        cv2.putText(panel, f"VERDICT: {verdict_txt}", (pad, 58),
+        cv2.putText(panel, f"VERDICT: {verdict_txt}", (pad, py),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.46, verdict_color, 1, cv2.LINE_AA)
+        py += 18
         if not is_ok and result.defect_type:
-            defect_map = {
-                "absent":  "no date detected",
-                "blurry":  "date unreadable",
-                "expired": "past expiry",
-            }
-            sub = defect_map.get(result.defect_type, result.defect_type)
-            cv2.putText(panel, f"  {result.defect_type.upper()} — {sub}", (pad, 74),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, _COLOR_DEFECT, 1, cv2.LINE_AA)
+            cv2.putText(panel, f"DEFECT: {result.defect_type.upper()}", (pad, py),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.40, _COLOR_DEFECT, 1, cv2.LINE_AA)
+            py += 16
     # Show scan attempt counter on panel
     if scan_attempts > 0:
         attempt_color = _COLOR_WARNING if scan_attempts < MAX_SCAN_ATTEMPTS else _COLOR_DEFECT
         cv2.putText(panel, f"SCAN ATTEMPT: {scan_attempts}/{MAX_SCAN_ATTEMPTS}",
-                    (pad, 54), cv2.FONT_HERSHEY_SIMPLEX, 0.38, attempt_color, 1, cv2.LINE_AA)
-        cv2.line(panel, (0,62), (_PANEL_W,62), (40,40,55), 1)
-        py = 72
-    else:
-        cv2.line(panel, (0,48), (_PANEL_W,48), (40,40,55), 1)
-        py = 58
+                    (pad, py), cv2.FONT_HERSHEY_SIMPLEX, 0.38, attempt_color, 1, cv2.LINE_AA)
+        py += 14
+    cv2.line(panel, (0, py-4), (_PANEL_W, py-4), (40,40,55), 1)
+    py += 8
 
     cv2.putText(panel, "FLAVOR", (pad,py),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.44, _COLOR_FLAVOR, 1, cv2.LINE_AA)
@@ -887,11 +905,28 @@ def build_display(
     cv2.putText(panel, "BARCODE", (pad,py),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.44, _COLOR_BARCODE, 1, cv2.LINE_AA)
     py += 15
-    bc_disp = result.barcode_text or ("undecoded" if result.barcode_bbox else "not detected")
+    # Prefer whatever this gather attempt decoded on the gripper-cam, then
+    # fall back to the pre-scan barcode captured from the phone camera before
+    # the cup reached the conveyor. That fallback is what the operator
+    # actually associated with this cup, so showing it on the AI stream
+    # avoids the misleading "not detected" line.
+    prescan_text, prescan_type = get_prescan_barcode()
     if result.barcode_text and result.barcode_type:
-        bc_disp = f"{result.barcode_type}: {result.barcode_text}"
-    bc_color = _COLOR_BARCODE if result.barcode_text else \
-               (_COLOR_WARNING if result.barcode_bbox else (80,80,80))
+        bc_disp  = f"{result.barcode_type}: {result.barcode_text}"
+        bc_color = _COLOR_BARCODE
+    elif result.barcode_text:
+        bc_disp  = result.barcode_text
+        bc_color = _COLOR_BARCODE
+    elif prescan_text:
+        bc_disp  = (f"{prescan_type}: {prescan_text}" if prescan_type
+                    else prescan_text) + "  (pre-scan)"
+        bc_color = _COLOR_BARCODE
+    elif result.barcode_bbox:
+        bc_disp  = "undecoded"
+        bc_color = _COLOR_WARNING
+    else:
+        bc_disp  = "not detected"
+        bc_color = (80, 80, 80)
     cv2.putText(panel, f"  {bc_disp}", (pad,py), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
                 bc_color, 1, cv2.LINE_AA)
     py += 14
@@ -903,8 +938,15 @@ def build_display(
     cv2.line(panel, (pad,py+2), (_PANEL_W-pad,py+2), (38,38,52), 1);  py += 10
 
     if not result.expiry_outputs:
-        cv2.putText(panel, "No expiry detections", (pad,py+18),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.44, (90,90,90), 1, cv2.LINE_AA)
+        if result.defect_type:
+            # After final classification — show the defect_type instead of the
+            # generic "no detections" message so the operator immediately sees
+            # WHY the cup was rejected.
+            cv2.putText(panel, f"DEFECT TYPE: {result.defect_type.upper()}",
+                        (pad, py+18), cv2.FONT_HERSHEY_SIMPLEX, 0.44, _COLOR_DEFECT, 1, cv2.LINE_AA)
+        else:
+            cv2.putText(panel, "No expiry detections", (pad, py+18),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.44, (90,90,90), 1, cv2.LINE_AA)
 
     for i, det in enumerate(result.expiry_outputs):
         if py > h - 30: break

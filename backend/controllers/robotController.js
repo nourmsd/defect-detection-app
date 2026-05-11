@@ -173,7 +173,8 @@ async function disableFreemotion(req, res) {
 
 async function rebootTool(req, res) {
   try {
-    const { ok, data } = await robotFetch('/reboot-tool', { method: 'POST' }, 10000);
+    // Tool reboot = release + update_tool + open_gripper. Typically 2-4 s.
+    const { ok, data } = await robotFetch('/reboot-tool', { method: 'POST' }, 20000);
     if (!ok) await logRobotCommandFailure('reboot-tool', data?.message || 'Tool reboot failed', req.io);
     res.json({ success: ok, message: data.message || (ok ? 'Tool reboot initiated' : 'Reboot failed') });
   } catch (err) {
@@ -184,7 +185,12 @@ async function rebootTool(req, res) {
 
 async function rebootMotors(req, res) {
   try {
-    const { ok, data } = await robotFetch('/reboot-motors', { method: 'POST' }, 10000);
+    // Motors reboot does request_new_calibration + calibrate_auto + safe_move
+    // back to INSPECTION_POSE. That sequence routinely takes 25-40 s on the
+    // Niryo Ned 2. The previous 10 s timeout caused the Node side to log a
+    // failure while the Python side was still calibrating — leaving the UI
+    // showing 'failed' even on successful reboots.
+    const { ok, data } = await robotFetch('/reboot-motors', { method: 'POST' }, 60000);
     if (!ok) await logRobotCommandFailure('reboot-motors', data?.message || 'Motors reboot failed', req.io);
     res.json({ success: ok, message: data.message || (ok ? 'Motors reboot initiated' : 'Reboot failed') });
   } catch (err) {
