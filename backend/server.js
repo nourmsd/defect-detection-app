@@ -188,6 +188,10 @@ async function handlePipelineStructuredEvent(msg, io) {
   if (type === 'inference_status') {
     emitSocketEvent(io, 'inference_status', payload);
   }
+
+  if (type === 'pending_barcode' || type === 'pending_barcode_cleared') {
+    emitSocketEvent(io, type, payload);
+  }
 }
 
 /* ===================== STREAM ===================== */

@@ -24,6 +24,11 @@ const inspectionSchema = new mongoose.Schema({
     type: String,
     default: 'missing'
   },
+  barcode: {
+    type: String,
+    default: 'missing',
+    index: true
+  },
   confidence: {
     type: Number,
     required: true

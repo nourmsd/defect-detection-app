@@ -393,3 +393,8 @@
   .chart-canvas-wrap { height: 220px; }
   .an-range-bar { flex-wrap: wrap; }
 }
+
+@media (max-width: 480px) {
+  .an-content { padding: 10px; }
+  .chart-canvas-wrap { height: 180px; }
+}

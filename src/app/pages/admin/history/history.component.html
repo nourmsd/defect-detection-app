@@ -96,7 +96,7 @@
         <tr *ngFor="let item of inspections; let i = index"
             (click)="openDetail(item)"
             class="hist-row">
-          <td class="col-id">{{ getShortId(item.id) }}</td>
+          <td class="col-id" [title]="displayInspectionId(item)">{{ displayInspectionId(item) }}</td>
           <td class="col-time">{{ item.timestamp | date:'dd MMM yyyy, HH:mm:ss' }}</td>
           <td class="col-device">{{ item.flavor || '—' }}</td>
           <td class="col-date">
@@ -171,7 +171,7 @@
       <div class="drawer-fields">
         <div class="drawer-field">
           <span class="df-label">Inspection ID</span>
-          <span class="df-value">{{ selectedInspection.id }}</span>
+          <span class="df-value">{{ displayInspectionId(selectedInspection) }}</span>
         </div>
         <div class="drawer-field">
           <span class="df-label">Timestamp</span>

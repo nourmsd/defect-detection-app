@@ -1,5 +1,5 @@
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
-import { ApiService } from '../../../services/api.service';
+import { ApiService, formatInspectionId } from '../../../services/api.service';
 import { AuthService } from '../../../services/auth.service';
 import { ThemeService } from '../../../services/theme.service';
 
@@ -136,9 +136,9 @@ export class HistoryComponent implements OnInit {
     return raw <= 1 ? Math.round(raw * 100) : Math.round(raw);
   }
 
-  getShortId(id: string): string {
-    if (!id) return '—';
-    return id.slice(-6).toUpperCase();
+  /** Composite barcode-expiry id, falling back to short Mongo _id. */
+  displayInspectionId(item: any): string {
+    return formatInspectionId(item);
   }
 
   logout() {

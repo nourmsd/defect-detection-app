@@ -420,7 +420,7 @@
               <tr *ngFor="let item of defectiveItems">
                 <td>
                   <div class="cell-user">
-                    <strong>{{ ((item._id || '') | slice:-6) || 'N/A' }}</strong>
+                    <strong [title]="displayInspectionId(item)">{{ displayInspectionId(item) }}</strong>
                   </div>
                 </td>
                 <td>{{ item.flavor || '—' }}</td>

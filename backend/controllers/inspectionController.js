@@ -21,6 +21,7 @@ function normalizeInspectionPayload(payload = {}) {
     flavor,
     defect_type,
     timestamp,
+    barcode,
   } = payload;
 
   if (!label || confidence === undefined) {
@@ -41,14 +42,25 @@ function normalizeInspectionPayload(payload = {}) {
   // OK products never carry a defect type.
   if (normalizedLabel === 'ok') normalizedDefectType = null;
 
+  // Resolve barcode-expiry composite ID. The AI side computes this as
+  // `${barcode}-${expiry_date}` and sends it as `id`; if that's missing but
+  // both parts are present we reconstruct it so the column never shows blank.
+  const resolvedExpiry = expiry_date || detected_date || 'missing';
+  const resolvedBarcode = barcode || 'missing';
+  let resolvedInspectionId = id ? String(id) : null;
+  if (!resolvedInspectionId && resolvedBarcode !== 'missing' && resolvedExpiry !== 'missing') {
+    resolvedInspectionId = `${resolvedBarcode}-${resolvedExpiry}`;
+  }
+
   return {
     normalizedLabel,
     inspectionData: {
-      inspection_id: id ? String(id) : null,
+      inspection_id: resolvedInspectionId,
       label: normalizedLabel,
       defect_type: normalizedDefectType,
       flavor: flavor || 'missing',
-      expiry_date: expiry_date || detected_date || 'missing',
+      expiry_date: resolvedExpiry,
+      barcode: resolvedBarcode,
       confidence: Number(confidence) || 0,
       processing_time: Number(processing_time) || 0,
       timestamp: timestamp ? new Date(timestamp) : null,
@@ -68,6 +80,8 @@ async function persistInspectionAndBroadcast(payload = {}, io, meta = {}) {
 
   const eventPayload = {
     id: inspectionData.inspection_id || crypto.randomUUID(),
+    inspection_id: inspectionData.inspection_id,
+    barcode: inspectionData.barcode,
     label: normalizedLabel,
     defect_type: inspectionData.defect_type,
     flavor: inspectionData.flavor,

@@ -40,10 +40,12 @@ FILE LAYOUT
   all.py    — thin shim: `from app import main; main()`
 """
 
+import json
 import threading
 import time
 import uuid
 import queue as queue_module
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 import cv2
@@ -66,6 +68,7 @@ from config import (
     EXPIRY_RUNS, MOVE_SPEED,
     SHOW_DEBUG_WINDOW, DISPLAY_WINDOW_NAME,
     DROIDCAM_URL, BARCODE_CLASS_NAME, BARCODE_CONF,
+    PIPELINE_EVENT_PREFIX,
 )
 
 import robot   # qualified access for shared mutable globals
@@ -238,6 +241,95 @@ def main() -> None:
     threading.Thread(target=_barcode_display_loop, daemon=True,
                      name="barcode-display").start()
 
+    # ── Barcode pre-scan slot ──────────────────────────────────────────────────
+    # Industrial flow: the worker holds the cup under the phone camera BEFORE
+    # placing it on the conveyor. This thread continuously polls the DroidCam
+    # feed and emits a `pending_barcode` socket event the moment a new barcode
+    # decodes. The processing_thread (which runs once the cup reaches the niryo
+    # inspection pose) consumes the pending slot and clears it via
+    # `pending_barcode_cleared`.
+    _pending_bc_slot:    Dict[str, Optional[str]] = {"text": None, "type": None}
+    _pending_bc_lock:    threading.Lock           = threading.Lock()
+    _bc_prescan_state:   Dict[str, Optional[str]] = {"last_decoded": None}
+
+    def _emit_pipeline_event(event_type: str, payload: Dict) -> None:
+        try:
+            print(
+                f"{PIPELINE_EVENT_PREFIX}"
+                f"{json.dumps({'type': event_type, 'payload': payload}, ensure_ascii=False)}",
+                flush=True,
+            )
+        except Exception as exc:
+            log.warning(f"[event] emit {event_type} failed: {exc}")
+
+    def _set_pending_barcode(text: str, btype: Optional[str]) -> None:
+        nowiso = datetime.now().astimezone().isoformat()
+        with _pending_bc_lock:
+            _pending_bc_slot["text"] = text
+            _pending_bc_slot["type"] = btype
+        _emit_pipeline_event("pending_barcode", {
+            "barcode": text,
+            "barcode_type": btype or "",
+            "timestamp": nowiso,
+            "status": "waiting_ai",
+        })
+        log.info(f"[pending-barcode] captured {btype}: {text!r} — waiting for AI inspection")
+
+    def _clear_pending_barcode(reason: str = "consumed") -> None:
+        with _pending_bc_lock:
+            had = _pending_bc_slot["text"]
+            _pending_bc_slot["text"] = None
+            _pending_bc_slot["type"] = None
+        # Reset the prescan dedupe key so the next scan (even of the same
+        # barcode on a different physical product) fires a fresh event.
+        _bc_prescan_state["last_decoded"] = None
+        if had:
+            _emit_pipeline_event("pending_barcode_cleared", {
+                "reason": reason,
+                "timestamp": datetime.now().astimezone().isoformat(),
+            })
+            log.info(f"[pending-barcode] cleared ({reason}): was {had!r}")
+
+    def _peek_pending_barcode() -> Tuple[Optional[str], Optional[str]]:
+        with _pending_bc_lock:
+            return _pending_bc_slot["text"], _pending_bc_slot["type"]
+
+    _prescan_alive = {"v": True}
+
+    def _barcode_prescan_loop():
+        """Continuously decode barcodes from the DroidCam feed and publish a
+        `pending_barcode` event the moment a new one is captured. The slot
+        persists until either (a) the gather loop consumes it for an actual
+        inspection, or (b) a different barcode replaces it. We do NOT auto-
+        clear on the phone-cam going empty — between scan-time and the
+        product reaching the niryo inspection pose there is always a window
+        where the phone-cam is empty, and clearing during that window would
+        destroy the captured barcode."""
+        period = 1.0 / 2.0  # 2 Hz — pyzbar+YOLO is heavy, no need to go faster
+        while _prescan_alive["v"]:
+            t0 = time.perf_counter()
+            latest = barcode_grabber.get_latest()
+            if latest is None:
+                time.sleep(0.5)
+                continue
+            frame, _ = latest
+            try:
+                text, btype, _, _ = run_barcode_pipeline(frame, yolo)
+            except Exception as exc:
+                log.debug(f"[barcode-prescan] decode error: {exc}")
+                text, btype = None, None
+
+            if text and text != _bc_prescan_state["last_decoded"]:
+                _bc_prescan_state["last_decoded"] = text
+                _set_pending_barcode(text, btype)
+
+            elapsed = time.perf_counter() - t0
+            if elapsed < period:
+                time.sleep(period - elapsed)
+
+    threading.Thread(target=_barcode_prescan_loop, daemon=True,
+                     name="barcode-prescan").start()
+
     # ── State machine variables ───────────────────────────────────────────────
     state:           str              = "SCANNING"
     presence_frames: int              = 0
@@ -351,7 +443,15 @@ def main() -> None:
 
             flavor_present  = bool(flavor_text)
             expiry_present  = bool(expiry_outs)        # bbox present, readable OR blurry
-            barcode_present = bool(barcode_text)       # decoded by pyzbar
+            # Barcode requirement is satisfied if either the inline gather
+            # decoded one, OR the pre-scan station already captured one for
+            # this product. In the industrial flow the operator scans the cup
+            # under the phone camera BEFORE placing it on the conveyor, so by
+            # the time the gather loop runs the phone-cam frame is usually
+            # empty — the slot is what links scan-time to inspection-time.
+            inline_barcode_present  = bool(barcode_text)
+            pending_slot_text, _    = _peek_pending_barcode()
+            barcode_present         = inline_barcode_present or bool(pending_slot_text)
             # Flavor and barcode are MANDATORY. Expiry is allowed to be missing
             # (it just becomes defect_type="absent"). So we keep gathering as
             # long as flavor or barcode is still missing; once both are valid,
@@ -427,6 +527,21 @@ def main() -> None:
             shared_result.final_label = "ok" if final_class == "NORMAL" else "defective"
             shared_result.defect_type = defect_type
 
+        # Industrial flow: prefer the barcode captured at the pre-scan station
+        # over whatever the inline gather decoded. The pre-scan slot is what
+        # the operator actually associated with this physical product before
+        # placing it on the conveyor.
+        merged_barcode = barcode_text
+        pending_text, _ = _peek_pending_barcode()
+        if pending_text and not merged_barcode:
+            merged_barcode = pending_text
+        elif pending_text and merged_barcode and pending_text != merged_barcode:
+            log.warning(
+                f"[merge] pre-scan barcode {pending_text!r} != inline {merged_barcode!r} "
+                f"— using pre-scan slot (operator-confirmed)"
+            )
+            merged_barcode = pending_text
+
         threading.Thread(
             target=robot.post_result_to_backend,
             args=(
@@ -435,11 +550,13 @@ def main() -> None:
                 detected_date,
                 flavor_text,
                 time.perf_counter() - t_snap_start,
-                barcode_text,
+                merged_barcode,
                 defect_type,
             ),
             daemon=True,
         ).start()
+
+        _clear_pending_barcode(reason="consumed")
 
         # Defective → queue pick-and-place directly. The Node bridge (stdout →
         # POST /inspection-result) is unnecessary: the decision is made here.
@@ -593,13 +710,18 @@ def main() -> None:
                             forced_defect = _classify_defect(
                                 shared_result.expiry_outputs, None
                             ) or "blurry"
+                            forced_bc = shared_result.barcode_text
+                            pending_text_f, _ = _peek_pending_barcode()
+                            if pending_text_f and not forced_bc:
+                                forced_bc = pending_text_f
                             robot.post_result_to_backend(
                                 "DEFECTIVE", forced_conf, None,
                                 shared_result.flavor_text,
                                 time.perf_counter() - t_snap_start,
-                                shared_result.barcode_text,
+                                forced_bc,
                                 forced_defect,
                             )
+                            _clear_pending_barcode(reason="consumed")
                             robot._say("defective product")
 #                             plc_send_command(PLC_BIT_DEFECTIVE)
 
@@ -637,6 +759,12 @@ def main() -> None:
                     absence_frames = 0
                 else:
                     absence_frames += 1
+                    # The previous product is gone. Clear the stale bboxes so
+                    # build_display() doesn't keep drawing the flavor/barcode
+                    # corner overlay over an empty conveyor.
+                    with result_lock:
+                        shared_result.flavor_bbox  = None
+                        shared_result.barcode_bbox = None
                 frac = min(absence_frames / ABSENCE_FRAMES, 1.0)
                 display = build_display(frame, shared_result, state, frac, fps, scan_attempts)
                 # Don't re-arm scanning while the robot is still working its

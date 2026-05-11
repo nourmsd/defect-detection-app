@@ -1163,6 +1163,21 @@
   .sidebar { display: none; }
   .kpi-row { grid-template-columns: 1fr; }
   .content-scroll { padding: 16px; }
+
+  /* Tables — let them scroll horizontally inside the panel rather than
+     forcing the whole page to scroll sideways. */
+  .panel table,
+  .data-table,
+  table { display: block; overflow-x: auto; max-width: 100%; }
+  .panel { padding: 14px; }
+}
+
+@media (max-width: 480px) {
+  .content-scroll { padding: 10px; }
+  .kpi-row { gap: 10px; }
+  .section-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .section-header h2 { font-size: 16px; }
+  .topbar { padding: 0 10px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════

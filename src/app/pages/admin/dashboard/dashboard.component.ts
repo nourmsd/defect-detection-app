@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { AuthService } from '../../../services/auth.service';
 import { SocketService } from '../../../services/socket.service';
 import { ThemeService } from '../../../services/theme.service';
-import { ApiService } from '../../../services/api.service';
+import { ApiService, formatInspectionId } from '../../../services/api.service';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../../environments/environment';
 import { Subscription, interval } from 'rxjs';
@@ -639,5 +639,10 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
 
   logout() {
     this.authService.logout();
+  }
+
+  /** Composite `barcode-expiry_date` id, falling back to short Mongo _id. */
+  displayInspectionId(item: any): string {
+    return formatInspectionId(item);
   }
 }

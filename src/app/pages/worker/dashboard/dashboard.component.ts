@@ -1,7 +1,9 @@
 import { ChangeDetectorRef, Component, NgZone, OnDestroy, OnInit } from '@angular/core';
-import { MatSnackBar } from '@angular/material/snack-bar';
+import { MatDialog } from '@angular/material/dialog';
 import { interval, Subscription } from 'rxjs';
 import { AuthService } from '../../../services/auth.service';
+import { ToastService } from '../../../shared/toast/toast.service';
+import { AlertsHistoryDialogComponent } from '../../../shared/alerts-history/alerts-history-dialog.component';
 import { ApiService, Inspection, StreamHealth } from '../../../services/api.service';
 import {
   InferenceStatusSocketPayload,
@@ -10,7 +12,9 @@ import {
   SocketService,
   SystemHealthSocketPayload,
   ErrorLogPayload,
-  DangerAlertPayload
+  DangerAlertPayload,
+  PendingBarcodePayload,
+  PendingBarcodeClearedPayload
 } from '../../../services/socket.service';
 import { ThemeService } from '../../../services/theme.service';
 
@@ -75,6 +79,11 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   lastDefectType: string | null = null;
   lastBarcode: string | null = null;
 
+  /* ── Pending barcode (pre-scan station) ─────────────────── */
+  pendingBarcode: string | null = null;
+  pendingBarcodeType: string | null = null;
+  pendingBarcodeAt: string | null = null;
+
   /* ── Live inference (per-cycle AI state) ───────────────── */
   inferenceStatus = 'IDLE';
   liveDate = '—';
@@ -116,6 +125,11 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   errorLogsLoading = false;
   showResolvedLogs = false;
   errorLogsExpanded = true;
+  readonly ERR_VISIBLE_LIMIT = 5;
+
+  get visibleErrorLogs(): ErrorLog[] {
+    return this.errorLogs.slice(0, this.ERR_VISIBLE_LIMIT);
+  }
 
   /* ── Danger alert banner ───────────────────────────────────── */
   dangerAlertActive = false;
@@ -152,7 +166,8 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     private authService: AuthService,
     private apiService: ApiService,
     public themeService: ThemeService,
-    private snackBar: MatSnackBar,
+    private toast: ToastService,
+    private dialog: MatDialog,
     private ngZone: NgZone,
     private cdr: ChangeDetectorRef
   ) {
@@ -186,7 +201,9 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
               };
               this.alarms = [alarm, ...this.alarms].slice(0, 30);
               if (alarm.level === 'critical' || alarm.level === 'error') {
-                this.snackBar.open(`⚠ ${alarm.message}`, 'Close', { duration: 6000 });
+                this.toast.error(alarm.message);
+              } else if (alarm.level === 'warning') {
+                this.toast.warning(alarm.message);
               }
               this.cdr.detectChanges();
             });
@@ -218,7 +235,34 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
               const dp = payload as DangerAlertPayload;
               this.dangerAlertActive = true;
               this.dangerAlertMessage = dp.message || 'System in danger!';
-              this.snackBar.open(`DANGER: ${dp.message}`, 'Dismiss', { duration: 12000 });
+              this.toast.error(`DANGER: ${dp.message}`, 12000);
+              this.cdr.detectChanges();
+            });
+          }
+
+          if (type === 'pending_barcode') {
+            this.ngZone.run(() => {
+              const pb = payload as PendingBarcodePayload;
+              this.pendingBarcode = pb.barcode || null;
+              this.pendingBarcodeType = pb.barcode_type || null;
+              this.pendingBarcodeAt = pb.timestamp || new Date().toISOString();
+              if (this.pendingBarcode) {
+                this.toast.info(`Barcode #${this.pendingBarcode} detected — waiting for AI inspection`, 4000);
+              }
+              this.cdr.detectChanges();
+            });
+          }
+
+          if (type === 'pending_barcode_cleared') {
+            this.ngZone.run(() => {
+              const pl = payload as PendingBarcodeClearedPayload;
+              const had = this.pendingBarcode;
+              this.pendingBarcode = null;
+              this.pendingBarcodeType = null;
+              this.pendingBarcodeAt = null;
+              if (had && pl.reason === 'absent') {
+                this.toast.warning(`Pre-scan slot cleared — product left phone view`, 3000);
+              }
               this.cdr.detectChanges();
             });
           }
@@ -233,7 +277,7 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
               this.rejectionRate = 0;
               this.seenInspectionIds.clear();
               this.sessionStartIso = new Date().toISOString();
-              this.snackBar.open('Daily counters reset at 19:00 — starting fresh', 'OK', { duration: 5000 });
+              this.toast.info('Daily counters reset at 19:00 — starting fresh', 5000);
               this.cdr.detectChanges();
             });
           }
@@ -321,8 +365,10 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
       this.seenRobotAlertKeys.add(key);
       const alarm: RobotAlarm = { level, message, timestamp: nowIso };
       this.alarms = [alarm, ...this.alarms].slice(0, 30);
-      if (level === 'critical' || level === 'error' || level === 'warning') {
-        this.snackBar.open(`ROBOT ${level.toUpperCase()}: ${message}`, 'Close', { duration: 5000 });
+      if (level === 'critical' || level === 'error') {
+        this.toast.error(`ROBOT: ${message}`);
+      } else if (level === 'warning') {
+        this.toast.warning(`ROBOT: ${message}`);
       }
     }
     this.cdr.markForCheck();
@@ -376,7 +422,9 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
         this.actionMessage = res.message;
         this.cmdLoading[cmd] = false;
         if (!res.success) {
-          this.snackBar.open(res.message, 'Close', { duration: 4000 });
+          this.toast.error(res.message);
+        } else if (res.message) {
+          this.toast.success(res.message);
         }
         this.cdr.detectChanges();
       },
@@ -395,11 +443,11 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
       next: (res) => {
         if (res.success) {
           this.freemotionActive = true;
-          this.snackBar.open('Free motion enabled', 'OK', { duration: 2500 });
+          this.toast.success('Free motion enabled', 2500);
         }
         this.cdr.detectChanges();
       },
-      error: () => this.snackBar.open('Failed to enable free motion', 'OK', { duration: 2500 })
+      error: () => this.toast.error('Failed to enable free motion')
     });
   }
 
@@ -409,11 +457,11 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
       next: (res) => {
         if (res.success) {
           this.freemotionActive = false;
-          this.snackBar.open('Free motion disabled', 'OK', { duration: 2500 });
+          this.toast.success('Free motion disabled', 2500);
         }
         this.cdr.detectChanges();
       },
-      error: () => this.snackBar.open('Failed to disable free motion', 'OK', { duration: 2500 })
+      error: () => this.toast.error('Failed to disable free motion')
     });
   }
 
@@ -454,6 +502,12 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     if (!alert) return;
     const inspection = this.normalizeAlert(alert);
     if (inspection) this.appendInspection(inspection);
+    // Pending slot was either consumed by this inspection (backend already
+    // emitted pending_barcode_cleared) or replaced — either way the final
+    // value is in this inspection payload, so drop any lingering pending UI.
+    this.pendingBarcode = null;
+    this.pendingBarcodeType = null;
+    this.pendingBarcodeAt = null;
     this.pollStreamHealth();
   }
 
@@ -670,12 +724,12 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
         if (!this.showResolvedLogs) {
           this.errorLogs = this.errorLogs.filter(l => !(l._id === id || l.id === id));
         }
-        this.snackBar.open('Alert acknowledged', 'OK', { duration: 2000 });
+        this.toast.success('Alert acknowledged', 2000);
         this.cdr.markForCheck();
       },
       error: () => {
         log.acknowledging = false;
-        this.snackBar.open('Failed to acknowledge', 'OK', { duration: 2000 });
+        this.toast.error('Failed to acknowledge', 2500);
         this.cdr.markForCheck();
       }
     });
@@ -684,6 +738,15 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   toggleShowResolved(): void {
     this.showResolvedLogs = !this.showResolvedLogs;
     this.loadErrorLogs();
+  }
+
+  openAlertsHistory(): void {
+    this.dialog.open(AlertsHistoryDialogComponent, {
+      data: { logs: this.errorLogs },
+      panelClass: 'alerts-history-dialog',
+      autoFocus: false,
+      maxWidth: '95vw'
+    });
   }
 
   dismissDangerBanner(): void {

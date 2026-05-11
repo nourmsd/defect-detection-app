@@ -12,6 +12,9 @@ export type DefectType = 'absent' | 'blurry' | 'expired';
 
 export interface Inspection {
   id: string;
+  _id?: string;
+  inspection_id?: string | null;
+  barcode?: string;
   label: 'ok' | 'defective';
   defect_type?: DefectType | null;
   flavor?: string;
@@ -19,6 +22,25 @@ export interface Inspection {
   timestamp: string;
   confidence?: number;
   processing_time?: number;
+}
+
+/**
+ * Build the user-facing inspection identifier. Backend persists this as
+ * `inspection_id` (composite `barcode-expiry_date`). If that's missing,
+ * reconstruct from the parts; only fall back to a short Mongo `_id` if
+ * neither barcode nor expiry are known.
+ */
+export function formatInspectionId(item: Partial<Inspection> | undefined | null): string {
+  if (!item) return '—';
+  const composite = item.inspection_id;
+  if (composite && composite !== 'missing' && composite !== 'missing-missing') return composite;
+  const bc = item.barcode && item.barcode !== 'missing' ? item.barcode : null;
+  const dt = item.expiry_date && item.expiry_date !== 'missing' ? item.expiry_date : null;
+  if (bc && dt) return `${bc}-${dt}`;
+  if (bc) return bc;
+  if (item.id && item.id !== 'missing') return item.id;
+  if (item._id) return String(item._id).slice(-6).toUpperCase();
+  return '—';
 }
 
 export interface StreamHealth {

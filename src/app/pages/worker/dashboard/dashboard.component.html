@@ -133,26 +133,6 @@
       </div>
     </header>
 
-    <!-- ALARM BANNERS -->
-    <div class="alarm-overlay" *ngIf="alarms.length > 0">
-      <div *ngFor="let alarm of alarms.slice(0, 3)" class="alarm-banner"
-        [class.banner-crit]="alarm.level === 'critical' || alarm.level === 'error'"
-        [class.banner-warn]="alarm.level === 'warning'"
-        [class.banner-info]="alarm.level === 'info'">
-        <mat-icon class="banner-icon">
-          {{ (alarm.level === 'critical' || alarm.level === 'error') ? 'error' : alarm.level === 'warning' ? 'warning' : 'info' }}
-        </mat-icon>
-        <span class="banner-msg">{{ alarm.message }}</span>
-        <span class="banner-time">{{ alarm.timestamp | date:'HH:mm:ss' }}</span>
-        <span class="banner-more-tag" *ngIf="alarms.length > 3 && alarm === alarms[2]">
-          +{{ alarms.length - 3 }} more
-        </span>
-        <button class="banner-dismiss" (click)="clearAlarms()">
-          <mat-icon>close</mat-icon>
-        </button>
-      </div>
-    </div>
-
     <!-- CONTENT AREA -->
     <div class="content-area">
 
@@ -326,7 +306,13 @@
 
             <!-- Current Inspection -->
             <div class="panel insp-panel">
-              <div class="panel-label">CURRENT INSPECTION</div>
+              <div class="panel-label">
+                CURRENT INSPECTION
+                <span class="pending-bc-pill" *ngIf="pendingBarcode">
+                  <mat-icon>qr_code_2</mat-icon>
+                  #{{ pendingBarcode }} — waiting AI
+                </span>
+              </div>
               <div class="insp-grid">
 
                 <!-- Result -->
@@ -383,10 +369,11 @@
                     <span class="insp-label">EXPIRY DATE</span>
                     <span class="insp-barcode"
                       [class.val-green]="lastBarcode"
-                      [class.val-muted]="!lastBarcode">
-                      {{ lastBarcode || '— none —' }}
+                      [class.val-amber]="!lastBarcode && pendingBarcode"
+                      [class.val-muted]="!lastBarcode && !pendingBarcode">
+                      {{ lastBarcode || pendingBarcode || '— none —' }}
                     </span>
-                    <span class="insp-label">BARCODE</span>
+                    <span class="insp-label">BARCODE {{ pendingBarcode && !lastBarcode ? '(PENDING)' : '' }}</span>
                   </div>
                 </div>
 
@@ -501,6 +488,11 @@
               <span class="err-title">ERROR LOGS &amp; ALERTS</span>
               <span class="err-count" *ngIf="errorLogs.length > 0">{{ errorLogs.length }}</span>
               <div class="err-actions" (click)="$event.stopPropagation()">
+                <button class="err-btn err-see-all" *ngIf="errorLogs.length > 0"
+                  (click)="openAlertsHistory()" matTooltip="See all alerts">
+                  <mat-icon>open_in_full</mat-icon>
+                  <span>See All</span>
+                </button>
                 <button class="err-btn" (click)="toggleShowResolved()"
                   [matTooltip]="showResolvedLogs ? 'Hide resolved' : 'Show resolved'">
                   <mat-icon>{{ showResolvedLogs ? 'visibility_off' : 'visibility' }}</mat-icon>
@@ -524,7 +516,7 @@
               </div>
 
               <div class="err-list" *ngIf="!errorLogsLoading && errorLogs.length > 0">
-                <div *ngFor="let log of errorLogs" class="err-row"
+                <div *ngFor="let log of visibleErrorLogs" class="err-row"
                   [ngClass]="severityColor(log.severity)"
                   [class.err-resolved]="log.resolved">
                   <div class="err-sev">
@@ -553,6 +545,10 @@
                     </button>
                   </div>
                 </div>
+                <button class="err-more" *ngIf="errorLogs.length > ERR_VISIBLE_LIMIT"
+                  (click)="openAlertsHistory()">
+                  + {{ errorLogs.length - ERR_VISIBLE_LIMIT }} more — view all
+                </button>
               </div>
 
             </div><!-- /err-body -->

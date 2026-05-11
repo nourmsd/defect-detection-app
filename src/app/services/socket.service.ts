@@ -83,6 +83,18 @@ export interface DangerAlertPayload {
   level: 'critical';
 }
 
+export interface PendingBarcodePayload {
+  barcode: string;
+  barcode_type: string;
+  timestamp: string;
+  status: string;
+}
+
+export interface PendingBarcodeClearedPayload {
+  reason: 'consumed' | 'absent' | string;
+  timestamp: string;
+}
+
 export interface SocketEnvelopeMap {
   inspection: InspectionSocketPayload;
   robot_alert: RobotAlertSocketPayload;
@@ -93,6 +105,8 @@ export interface SocketEnvelopeMap {
   error_log: ErrorLogPayload;
   danger_alert: DangerAlertPayload;
   daily_reset: DailyResetPayload;
+  pending_barcode: PendingBarcodePayload;
+  pending_barcode_cleared: PendingBarcodeClearedPayload;
 }
 
 export type SocketEventType = keyof SocketEnvelopeMap;

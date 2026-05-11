@@ -314,7 +314,11 @@
   gap: 8px;
   padding: 8px 10px;
   min-height: 0;
-  overflow: hidden;
+  /* Single scroll container for the worker page. Camera split + inspection
+     card + history can grow taller than the viewport; the scrollbar appears
+     here so the inspection card stays reachable. */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* ══════════════════════════════════════════════════════
@@ -405,12 +409,14 @@
 ══════════════════════════════════════════════════════ */
 
 .main-grid {
-  flex: 1;
   display: flex;
   flex-direction: row;
   gap: 8px;
   min-height: 0;
-  overflow: hidden;
+  /* Don't clip — let .main-area be the single scroll container so the
+     inspection card / history below the camera split is reachable. */
+  overflow: visible;
+  flex-shrink: 0;
 }
 
 /* ── Left column ─────────────────────────────────── */
@@ -421,7 +427,7 @@
   align-items: stretch;
   flex: 2.4;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .left-col .camera-panel {
@@ -430,26 +436,23 @@
 }
 
 .left-right-stack {
-  flex: 1;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: row;
   gap: 10px;
   min-width: 0;
-  min-height: 0;
-  overflow: hidden;
 }
 .left-right-stack > * {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
 }
 
 .left-right-stack .insp-panel {
-  flex: 1;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  min-height: 0;
 }
 
 /* ── Right column ────────────────────────────────── */
@@ -497,6 +500,31 @@
 }
 .panel-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
+.pending-bc-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-family: var(--font-data);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  background: var(--amber-dim);
+  color: var(--amber);
+  border: 1px solid rgba(245,158,11,.35);
+  text-transform: none;
+  animation: pending-pulse 1.6s ease-in-out infinite;
+}
+.pending-bc-pill mat-icon {
+  font-size: 12px !important;
+  width: 12px !important;
+  height: 12px !important;
+}
+@keyframes pending-pulse {
+  0%,100% { opacity: 1; }
+  50%     { opacity: .55; }
+}
+
 /* ══════════════════════════════════════════════════════
    CAMERA PANEL
 ══════════════════════════════════════════════════════ */
@@ -508,7 +536,7 @@
 
 .camera-split {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 2.2fr 1fr;
   gap: 10px;
   width: 100%;
   margin-bottom: 7px;
@@ -652,13 +680,13 @@
 ══════════════════════════════════════════════════════ */
 
 .insp-grid {
-  display: flex; flex-direction: column; flex: 1;
+  display: flex; flex-direction: column;
 }
 
 .insp-cell {
   display: flex; flex-direction: row;
   align-items: center; justify-content: flex-start;
-  gap: 12px; padding: 10px 14px; flex: 1;
+  gap: 12px; padding: 10px 14px;
   border-bottom: 1px solid var(--border);
 }
 .insp-cell:last-child { border-bottom: none; }
@@ -853,7 +881,52 @@
 .err-btn:hover { border-color: var(--accent); color: var(--accent); }
 .err-chevron { color: var(--text-muted); font-size: 18px; margin-left: 4px; }
 
-.err-body { overflow-y: auto; }
+.err-body {
+  overflow-y: auto;
+  max-height: 320px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-light) transparent;
+}
+.err-body::-webkit-scrollbar { width: 7px; }
+.err-body::-webkit-scrollbar-track { background: transparent; }
+.err-body::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 4px;
+}
+.err-body::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+.err-see-all {
+  display: flex !important;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px !important;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--accent) !important;
+  border-color: rgba(0,212,255,.3) !important;
+  background: var(--accent-dim) !important;
+}
+.err-see-all mat-icon { font-size: 12px !important; width: 12px !important; height: 12px !important; }
+.err-see-all:hover { background: rgba(0,212,255,.18) !important; }
+
+.err-more {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-card-alt);
+  border: none;
+  border-top: 1px solid var(--border);
+  color: var(--accent);
+  font-family: var(--font-data);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background .15s;
+}
+.err-more:hover { background: var(--accent-dim); }
 
 .err-loading, .err-empty {
   display: flex; align-items: center; gap: 8px;
@@ -958,3 +1031,104 @@
 .light-mode .dot.dot-empty    { background: #d0dae8; }
 .light-mode .insp-gauge-num   { color: var(--text-primary); }
 .light-mode .mini-donut-center { color: var(--text-primary); }
+
+/* ══════════════════════════════════════════════════════
+   RESPONSIVE — tablet & mobile breakpoints
+   Goal: every dashboard element stays reachable on a
+   phone in portrait without horizontal scroll, no CSS
+   variable on which a desktop styling decision depends
+   should be hard-coded in pixels.
+══════════════════════════════════════════════════════ */
+
+/* Large tablet / small laptop: stack main grid vertically. */
+@media (max-width: 1100px) {
+  .main-grid { flex-direction: column; }
+  .right-col { max-width: none; min-width: 0; }
+  .right-col .error-section { overflow: visible; }
+  .camera-box { height: 44vh; min-height: 280px; }
+}
+
+/* Tablet portrait. */
+@media (max-width: 900px) {
+  :host { --sidebar-width: 160px; }
+  .kpi-row { flex-wrap: wrap; }
+  .kpi-row .stat-card { flex: 1 1 calc(50% - 4px); min-width: 0; }
+  .kpi-row .stat-card-wide { flex: 1 1 100%; }
+  .stat-value { font-size: 36px; }
+  .camera-split { grid-template-columns: 1fr; }
+  .camera-box { height: 38vh; min-height: 240px; }
+  .cam-meta { grid-template-columns: repeat(2, 1fr); }
+  .robot-status-strip { grid-template-columns: repeat(2, 1fr); }
+  .topbar-status .pill { display: none; }
+  .topbar-status .pill:first-child { display: flex; }
+}
+
+/* Phone portrait — collapse sidebar to icon strip, single-column everything. */
+@media (max-width: 640px) {
+  .sidebar {
+    width: 52px;
+    min-width: 52px;
+  }
+  .sidebar .sidebar-section-title,
+  .sidebar .brand-text,
+  .sidebar .sys-name,
+  .sidebar .sys-tag,
+  .sidebar .ai-stats,
+  .sidebar .ai-status-badge span,
+  .sidebar .logout-btn span {
+    display: none;
+  }
+  .sidebar-section { padding: 8px 6px; }
+  .sys-item { justify-content: center; }
+  .sidebar-brand { justify-content: center; padding: 12px 6px; }
+
+  .topbar { padding: 0 8px; gap: 6px; height: 42px; min-height: 42px; }
+  .topbar-status { display: none; }
+  .topbar-title { font-size: 11px; }
+  .clock { font-size: 12px; min-width: 56px; }
+
+  .content-area { padding: 6px 6px; gap: 6px; }
+
+  .kpi-row { flex-direction: column; }
+  .kpi-row .stat-card,
+  .kpi-row .stat-card-wide { flex: 1 1 100%; padding: 10px 12px; }
+  .stat-value { font-size: 28px; }
+  .donut-row { gap: 10px; }
+  .mini-donut-wrap { width: 56px; height: 56px; }
+  .mini-donut-svg  { width: 56px; height: 56px; }
+  .mini-donut-center { font-size: 13px; }
+  .dmetric-val { font-size: 18px; }
+
+  .camera-box { height: 30vh; min-height: 200px; }
+  .cam-meta { grid-template-columns: repeat(2, 1fr); gap: 4px; }
+  .meta-val { font-size: 9px; }
+
+  .left-right-stack { flex-direction: column; }
+  .insp-cell { padding: 8px 10px; gap: 8px; }
+  .insp-val { font-size: 12px; }
+
+  .robot-actions { gap: 4px; }
+  .robot-action-btn { padding: 9px 10px; font-size: 11px; }
+  .estop-btn { padding: 9px 12px; font-size: 11px; }
+
+  .err-body { max-height: 260px; }
+
+  /* Toasts: full-width band on phones so message text doesn't wrap awkwardly. */
+  app-toast-container .toast-stack {
+    left: 8px !important;
+    right: 8px !important;
+    top: 8px !important;
+    max-width: none !important;
+  }
+
+  .danger-banner { padding: 10px 12px; }
+  .danger-text strong { font-size: 11px; }
+  .danger-text span   { font-size: 11px; }
+}
+
+/* Very small phones — collapse to single KPI per row already; tighten chrome. */
+@media (max-width: 380px) {
+  .topbar-title { display: none; }
+  .stat-value { font-size: 24px; }
+  .panel { padding: 7px 9px; }
+}

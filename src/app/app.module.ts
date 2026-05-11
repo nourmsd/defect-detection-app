@@ -17,9 +17,12 @@ import { MatTableModule } from '@angular/material/table';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSelectModule } from '@angular/material/select';
+import { MatDialogModule } from '@angular/material/dialog';
 
 import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
+import { ToastContainerComponent } from './shared/toast/toast-container.component';
+import { AlertsHistoryDialogComponent } from './shared/alerts-history/alerts-history-dialog.component';
 
 // Auth & Dashboard Pages
 import { LoginComponent } from './pages/auth/login/login.component';
@@ -40,7 +43,9 @@ import { ErrorInterceptor } from './services/error.interceptor';
     WorkerDashboardComponent,
     AdminDashboardComponent,
     HistoryComponent,
-    AnalyticsComponent
+    AnalyticsComponent,
+    ToastContainerComponent,
+    AlertsHistoryDialogComponent
   ],
   imports: [
     BrowserModule,
@@ -60,7 +65,8 @@ import { ErrorInterceptor } from './services/error.interceptor';
     MatToolbarModule,
     MatTooltipModule,
     BaseChartDirective,
-    MatSelectModule
+    MatSelectModule,
+    MatDialogModule
   ],
   providers: [
     provideCharts(withDefaultRegisterables()),
