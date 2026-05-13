@@ -6,6 +6,7 @@ No mutable runtime state, no Flask apps.
 import os
 import logging
 import threading  # noqa: F401  (re-used downstream)
+import time
 
 import cv2
 import numpy as np
@@ -15,14 +16,17 @@ from pyniryo import PoseObject  # noqa: F401
 try:
     import snap7
     import snap7.client  # type: ignore[import]
-    from snap7.util import set_bool  # type: ignore[import]
+    from snap7.util import set_bool, get_bool  # type: ignore[import]
     import snap7.util   # type: ignore[import]
-    import snap7.types  # type: ignore[import]
-    import snap7.exceptions  # type: ignore[import]
     _SNAP7_AVAILABLE = True
-except ImportError:
+except Exception as _snap7_import_err:
     snap7 = None  # type: ignore[assignment]
     _SNAP7_AVAILABLE = False
+    import logging as _log_tmp
+    _log_tmp.getLogger("yogurt-system").error(
+        f"[PLC] snap7 import failed — {type(_snap7_import_err).__name__}: {_snap7_import_err}"
+    )
+    print(f"[PLC] snap7 import failed — {type(_snap7_import_err).__name__}: {_snap7_import_err}", flush=True)
 
 
 
@@ -137,34 +141,70 @@ DROIDCAM_URL       = os.environ.get("DROIDCAM_URL", "http://10.10.10.115:4747/vi
 BARCODE_CLASS_NAME = "barcode"
 BARCODE_CONF       = 0.30
 
- # ── PLC (Siemens via Snap7) ──────────────────────────────────────────────────
+# ── PLC (Siemens via Snap7) ──────────────────────────────────────────────────
 PLC_IP        = os.environ.get("PLC_IP", "192.168.0.1")
 PLC_DB_NUMBER = int(os.environ.get("PLC_DB_NUMBER", "1"))
 PLC_RACK      = int(os.environ.get("PLC_RACK", "0"))
 PLC_SLOT      = int(os.environ.get("PLC_SLOT", "1"))
-PLC_BIT_CONFORM   = int(os.environ.get("PLC_BIT_CONFORM",   "0"))   # advance conveyor
-PLC_BIT_DEFECTIVE = int(os.environ.get("PLC_BIT_DEFECTIVE", "1"))   # optional reject signal
+PLC_BIT_CONFORM   = int(os.environ.get("PLC_BIT_CONFORM",   "0"))
+PLC_BIT_DEFECTIVE = int(os.environ.get("PLC_BIT_DEFECTIVE", "1"))
 
 _plc_client = snap7.client.Client() if _SNAP7_AVAILABLE else None
 _plc_lock   = threading.Lock()
 
 
+def _get_plc_connection() -> bool:
+    """Lazy-connect. Must be called inside _plc_lock."""
+    if not _SNAP7_AVAILABLE or _plc_client is None:
+        return False
+    if not _plc_client.get_connected():
+        try:
+            _plc_client.connect(PLC_IP, PLC_RACK, PLC_SLOT)
+        except Exception as exc:
+            log.warning(f"[PLC] Connect to {PLC_IP} failed: {exc}")
+            return False
+    return _plc_client.get_connected()
+
+
+def plc_heartbeat() -> tuple:
+    """(is_connected, plc_online_bit) — same logic as working test.py."""
+    if not _SNAP7_AVAILABLE or _plc_client is None:
+        return False, False
+    is_connected = False
+    plc_online_bit = False
+    with _plc_lock:
+        is_connected = _get_plc_connection()
+        if is_connected:
+            try:
+                data = _plc_client.db_read(PLC_DB_NUMBER, 0, 1)
+                plc_online_bit = bool(get_bool(data, 0, 2))
+            except Exception as exc:
+                log.warning(f"[PLC] Heartbeat read failed: {exc}")
+                is_connected = False
+    return is_connected, plc_online_bit
+
+
 def plc_send_command(offset_bit: int) -> None:
-     """Set DB<PLC_DB_NUMBER>.DBX0.<offset_bit> high. Lazy connects on first use,
-     serialises calls behind a lock, and silently no-ops if snap7 is missing."""
-     if not _SNAP7_AVAILABLE or _plc_client is None:
-         log.warning(f"[PLC] snap7 not installed — skipping bit 0.{offset_bit}")
-         return
-     with _plc_lock:
-         try:
-             if not _plc_client.get_connected():
-                 _plc_client.connect(PLC_IP, PLC_RACK, PLC_SLOT)
-             data = _plc_client.db_read(PLC_DB_NUMBER, 0, 1)
-             set_bool(data, 0, offset_bit, True)
-             _plc_client.db_write(PLC_DB_NUMBER, 0, data)
-             log.info(f"[PLC] Set DB{PLC_DB_NUMBER}.DBX0.{offset_bit} = TRUE")
-         except Exception as exc:
-             log.warning(f"[PLC] Communication error on bit 0.{offset_bit}: {exc}")
+    """Pulse DBX0.<offset_bit> HIGH→LOW to generate a rising edge each call."""
+    if not _SNAP7_AVAILABLE or _plc_client is None:
+        log.warning("[PLC] snap7 not available — command skipped")
+        return
+    with _plc_lock:
+        if not _get_plc_connection():
+            log.warning(f"[PLC] Not connected — skipping bit {offset_bit}")
+            return
+        try:
+            data = _plc_client.db_read(PLC_DB_NUMBER, 0, 1)
+            set_bool(data, 0, offset_bit, True)
+            _plc_client.db_write(PLC_DB_NUMBER, 0, data)
+            log.info(f"[PLC] DB{PLC_DB_NUMBER}.DBX0.{offset_bit} = TRUE")
+            time.sleep(0.2)
+            data = _plc_client.db_read(PLC_DB_NUMBER, 0, 1)
+            set_bool(data, 0, offset_bit, False)
+            _plc_client.db_write(PLC_DB_NUMBER, 0, data)
+            log.info(f"[PLC] DB{PLC_DB_NUMBER}.DBX0.{offset_bit} = FALSE")
+        except Exception as exc:
+            log.warning(f"[PLC] send_command bit={offset_bit} failed: {exc}")
 
 
 # ── Pipeline B — Expiry date (ResNet multi-head classifier) ──────────────────

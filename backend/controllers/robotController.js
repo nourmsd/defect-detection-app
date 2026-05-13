@@ -8,6 +8,8 @@
 
 const { emitSocketEvent } = require('../utils/socketEvents');
 const { createErrorLog } = require('./systemController');
+const { sendEmergencyStopAlert } = require('../services/emailService');
+const User = require('../models/User');
 
 const ROBOT_SERVICE_URL = process.env.ROBOT_SERVICE_URL || 'http://127.0.0.1:5002';
 const NOTIFY_TIMEOUT_MS = 2000;
@@ -213,7 +215,28 @@ async function calibrate(req, res) {
 async function emergencyStop(req, res) {
   try {
     const { ok, data } = await robotFetch('/emergency-stop', { method: 'POST' }, 3000);
-    if (!ok) await logRobotCommandFailure('emergency-stop', data?.message || 'Emergency stop failed', req.io);
+    if (!ok) {
+      await logRobotCommandFailure('emergency-stop', data?.message || 'Emergency stop failed', req.io);
+    } else {
+      const timestamp = new Date().toISOString();
+      const alertMsg = 'Please check your app — the robot needs an emergency stop right now.';
+      if (req.io) {
+        emitSocketEvent(req.io, 'danger_alert', {
+          message: alertMsg,
+          alert_type: 'urgent',
+          level: 'critical',
+          timestamp,
+        });
+      }
+      try {
+        const users = await User.find({ status: 'approved' }).select('email');
+        const emails = users.map(u => u.email).filter(Boolean);
+        console.log(`[emergencyStop] Sending alert email to ${emails.length} approved user(s)`);
+        await sendEmergencyStopAlert(emails);
+      } catch (emailErr) {
+        console.warn('[emergencyStop] Email error:', emailErr.message);
+      }
+    }
     res.json({ success: ok, message: data.message || (ok ? 'Emergency stop activated' : 'E-stop command failed') });
   } catch (err) {
     await logRobotCommandFailure('emergency-stop', err.message, req.io);

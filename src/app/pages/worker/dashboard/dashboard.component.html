@@ -36,13 +36,6 @@
         </ng-container>
       </div>
       <div class="sys-item">
-        <span class="sys-dot" [class.sys-on]="streamHealth.pyniryo_available" [class.sys-off]="!streamHealth.pyniryo_available"></span>
-        <ng-container *ngIf="!sidebarCollapsed">
-          <span class="sys-name">PyNiryo SDK</span>
-          <span class="sys-tag" [class.tag-on]="streamHealth.pyniryo_available">{{ streamHealth.pyniryo_available ? 'OK' : 'OFF' }}</span>
-        </ng-container>
-      </div>
-      <div class="sys-item">
         <span class="sys-dot" [class.sys-on]="plcConnected" [class.sys-off]="!plcConnected"></span>
         <ng-container *ngIf="!sidebarCollapsed">
           <span class="sys-name">PLC</span>
@@ -586,11 +579,13 @@
   </div><!-- /main-area -->
 
 
-  <!-- DANGER ALERT BANNER -->
-  <div class="danger-banner" *ngIf="dangerAlertActive">
-    <mat-icon class="danger-icon">error</mat-icon>
+  <!-- BROADCAST BANNER -->
+  <div class="danger-banner" *ngIf="dangerAlertActive"
+    [class.danger-banner--urgent]="dangerAlertType === 'urgent'"
+    [class.danger-banner--info]="dangerAlertType === 'info'">
+    <mat-icon class="danger-icon">{{ dangerAlertType === 'urgent' ? 'warning' : 'campaign' }}</mat-icon>
     <div class="danger-text">
-      <strong>DANGER ALERT</strong>
+      <strong>{{ dangerAlertType === 'urgent' ? 'URGENT ALERT' : 'MESSAGE' }}</strong>
       <span>{{ dangerAlertMessage }}</span>
     </div>
     <button class="danger-dismiss" (click)="dismissDangerBanner()">

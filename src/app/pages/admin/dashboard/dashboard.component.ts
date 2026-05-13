@@ -64,11 +64,13 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   settingsSaving = false;
   settingsSuccess = false;
 
-  /* ── Danger alert ────────────────────────── */
+  /* ── Broadcast message ───────────────────── */
   dangerAlertActive = false;
   dangerAlertMessage = '';
+  dangerAlertType: 'urgent' | 'info' = 'urgent';
   sendingDangerAlert = false;
   manualDangerMessage = '';
+  broadcastType: 'urgent' | 'info' = 'urgent';
 
   private subscriptions = new Subscription();
   private clockSubscription?: Subscription;
@@ -150,9 +152,12 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
 
         if (type === 'danger_alert') {
           const dp = payload as any;
-          this.dangerAlertActive = true;
-          this.dangerAlertMessage = dp.message || 'System in danger!';
-          this.snackBar.open(`DANGER: ${dp.message}`, 'Dismiss', { duration: 10000, panelClass: ['snack-danger'] });
+          this.dangerAlertActive  = true;
+          this.dangerAlertMessage = dp.message || '';
+          this.dangerAlertType    = dp.alert_type === 'info' ? 'info' : 'urgent';
+          const panelClass = this.dangerAlertType === 'urgent' ? ['snack-danger'] : ['snack-info'];
+          const prefix     = this.dangerAlertType === 'urgent' ? '🚨 ' : '📢 ';
+          this.snackBar.open(`${prefix}${dp.message}`, 'Dismiss', { duration: 10000, panelClass });
         }
 
         this.cdr.markForCheck();
@@ -617,11 +622,11 @@ export class AdminDashboardComponent implements OnInit, OnDestroy {
   triggerManualDangerAlert() {
     if (!this.manualDangerMessage.trim()) return;
     this.sendingDangerAlert = true;
-    this.apiService.triggerDangerAlert(this.manualDangerMessage).subscribe({
+    this.apiService.triggerDangerAlert(this.manualDangerMessage, this.broadcastType).subscribe({
       next: () => {
         this.sendingDangerAlert = false;
         this.manualDangerMessage = '';
-        this.snackBar.open('Emergency broadcast sent to all users!', 'OK', { duration: 4000 });
+        this.snackBar.open('Message broadcast to all users!', 'OK', { duration: 4000 });
         this.cdr.markForCheck();
       },
       error: () => {

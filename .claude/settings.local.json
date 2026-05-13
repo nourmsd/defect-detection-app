@@ -64,7 +64,8 @@
       "Bash(python -c \"import websocket; print\\('websocket-client:', websocket.__version__\\)\")",
       "Bash(python -c \"import websockets; print\\('websockets:', websockets.__version__\\)\")",
       "Bash(python -c \"import roslibpy; print\\('roslibpy:', roslibpy.__version__\\)\")",
-      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:4200)"
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:4200)",
+      "PowerShell(cmd /c \"dir C:\\\\Dev\\\\Stage_PFE\\\\smart-quality-control-frontend\\\\backend /b /a\")"
     ]
   }
 }

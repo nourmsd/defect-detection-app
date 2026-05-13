@@ -273,12 +273,27 @@ def _publish_splash(status: str, detail: str = "") -> None:
 # EXPIRY-DATE PARSING & DEFECT CLASSIFICATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"]
+# Month-name → 1-indexed month number.  Supports English + French abbreviations
+# because the fine-tuned TrOCR model was trained on French yogurt labels.
+_MONTH_MAP: Dict[str, int] = {
+    "JAN": 1,
+    "FEB": 2, "FEV": 2,
+    "MAR": 3,
+    "APR": 4, "AVR": 4,
+    "MAY": 5, "MAI": 5,
+    "JUN": 6,
+    "JUL": 7,
+    "AUG": 8, "AOU": 8,
+    "SEP": 9,
+    "OCT": 10,
+    "NOV": 11,
+    "DEC": 12,
+}
 
 
-def _parse_expiry_date(text: Optional[str]) -> Optional[Tuple[int, int]]:
-    """Parse a 'DD MMM' expiry-date string (e.g. '12 JAN') into (month_index, day),
-    1-indexed month. Returns None on any parse failure."""
+def _parse_dd_mmm(text: Optional[str]) -> Optional[Tuple[int, int]]:
+    """Parse 'DD MMM' (e.g. '06 AVR', '10 MAI') → (month, day) tuple.
+    Returns None if the text cannot be parsed."""
     if not text:
         return None
     parts = text.strip().upper().split()
@@ -288,10 +303,10 @@ def _parse_expiry_date(text: Optional[str]) -> Optional[Tuple[int, int]]:
         day = int(parts[0])
     except ValueError:
         return None
-    mon = parts[1][:3]
-    if mon not in _MONTHS:
+    month = _MONTH_MAP.get(parts[1][:3])
+    if month is None:
         return None
-    return (_MONTHS.index(mon) + 1, day)
+    return (month, day)
 
 
 BLANK_CROP_STD_THRESHOLD  = 18.0   # grayscale std below this → unicolor flat sticker
@@ -327,12 +342,28 @@ def _classify_defect(
     )
     if not has_readable:
         return "blurry"
-    with _robot_mod._reference_date_lock:
-        ref = _robot_mod._reference_date
-    ref_parsed = _parse_expiry_date(ref) if ref else None
-    det_parsed = _parse_expiry_date(detected_date)
-    if ref_parsed and det_parsed and det_parsed < ref_parsed:
-        return "expired"
+    # Primary: read from the local file written by Node.js on every settings save.
+    # This is reliable regardless of push/MongoDB availability.
+    ref = None
+    try:
+        import json as _json
+        _threshold_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "expiry_threshold.json")
+        with open(_threshold_file) as _f:
+            ref = _json.load(_f).get("expiry_threshold") or None
+    except Exception:
+        pass
+    # Fallback: in-memory value set by POST /reference-date
+    if not ref:
+        with _robot_mod._reference_date_lock:
+            ref = _robot_mod._reference_date
+    log.info(f"[classify] detected={detected_date!r}  threshold={ref!r}")
+    if ref:
+        ref_md = _parse_dd_mmm(ref)
+        det_md = _parse_dd_mmm(detected_date)
+        log.info(f"[classify] parsed  det={det_md}  ref={ref_md}")
+        if ref_md and det_md and det_md < ref_md:
+            log.info(f"[classify] → EXPIRED")
+            return "expired"
     return None
 
 
@@ -811,26 +842,29 @@ def build_display(
     main = base_frame.copy()
     h, w = main.shape[:2];  pad = 7
 
-    if result.flavor_bbox and result.flavor_text:
-        x1, y1, x2, y2 = result.flavor_bbox
-        _draw_corner_bbox(main, x1, y1, x2, y2, _COLOR_FLAVOR, thickness=2)
-        _draw_label_pill(main, f"FLAVOR  {result.flavor_text}",
-                         x1, max(20, y1 - 6), _COLOR_FLAVOR, scale=0.50)
+    # Bbox overlays are only meaningful during active analysis (PROCESSING).
+    # In RESULT/WAITING_REMOVAL the product has often already moved, so the
+    # frozen coordinates would appear at the wrong position on the frame.
+    if state == "PROCESSING":
+        if result.flavor_bbox and result.flavor_text:
+            x1, y1, x2, y2 = result.flavor_bbox
+            _draw_corner_bbox(main, x1, y1, x2, y2, _COLOR_FLAVOR, thickness=2)
+            _draw_label_pill(main, f"FLAVOR  {result.flavor_text}",
+                             x1, max(20, y1 - 6), _COLOR_FLAVOR, scale=0.50)
 
-    for det in result.expiry_outputs:
-        x1, y1, x2, y2 = det["crop_bbox"];  status = det["status"]
-        if status == "NORMAL":     color, lbl = _COLOR_VALID,   f"DATE  {det['text']}"
-        elif status == "DEFECTIVE": color, lbl = _COLOR_DEFECT,  "DATE  unreadable"
-        else:                       color, lbl = _COLOR_WARNING, f"DATE  ? {det['text']}"
-        _draw_corner_bbox(main, x1, y1, x2, y2, color, thickness=2)
-        _draw_label_pill(main, lbl, x1, max(20, y1 - 6), color, scale=0.50)
+        for det in result.expiry_outputs:
+            x1, y1, x2, y2 = det["crop_bbox"];  status = det["status"]
+            if status == "NORMAL":      color, lbl = _COLOR_VALID,   f"DATE  {det['text']}"
+            elif status == "DEFECTIVE": color, lbl = _COLOR_DEFECT,  "DATE  unreadable"
+            else:                       color, lbl = _COLOR_WARNING, f"DATE  ? {det['text']}"
+            _draw_corner_bbox(main, x1, y1, x2, y2, color, thickness=2)
+            _draw_label_pill(main, lbl, x1, max(20, y1 - 6), color, scale=0.50)
 
-    # Barcode bbox + decoded text (drawn on the same robot-camera frame).
-    if result.barcode_bbox and result.barcode_text:
-        x1, y1, x2, y2 = result.barcode_bbox
-        _draw_corner_bbox(main, x1, y1, x2, y2, _COLOR_BARCODE, thickness=2)
-        bc_lbl = f"BARCODE  {result.barcode_text}"
-        _draw_label_pill(main, bc_lbl, x1, max(20, y1 - 6), _COLOR_BARCODE, scale=0.50)
+        if result.barcode_bbox and result.barcode_text:
+            x1, y1, x2, y2 = result.barcode_bbox
+            _draw_corner_bbox(main, x1, y1, x2, y2, _COLOR_BARCODE, thickness=2)
+            bc_lbl = f"BARCODE  {result.barcode_text}"
+            _draw_label_pill(main, bc_lbl, x1, max(20, y1 - 6), _COLOR_BARCODE, scale=0.50)
 
     fps_lbl = f"FPS {fps:.1f}"
     (tw, _), _ = cv2.getTextSize(fps_lbl, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)

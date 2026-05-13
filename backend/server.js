@@ -57,8 +57,9 @@ function buildBundledPythonEnv(extraEnv = {}) {
 }
 
 function resolvePythonCommand() {
-  console.log("[Python] Using system python");
-  return { command: 'python', args: [] };
+  const cmd = process.env.PYTHON_CMD || 'python';
+  console.log(`[Python] Using: ${cmd}`);
+  return { command: cmd, args: [] };
 }
 
 /* ===================== HELPERS ===================== */
@@ -118,7 +119,7 @@ async function triggerDangerAlert(io, message) {
 }
 
 // Supervisor emergency broadcast â€” sends to ALL approved users' emails
-async function triggerSupervisorBroadcast(io, message) {
+async function triggerSupervisorBroadcast(io, message, alertType = 'urgent') {
   const now = Date.now();
   const lastSent = recentDangerAlerts.get(message) || 0;
   if (now - lastSent < DANGER_COOLDOWN_MS) return;
@@ -127,16 +128,21 @@ async function triggerSupervisorBroadcast(io, message) {
 
   emitSocketEvent(io, 'danger_alert', {
     message,
+    alert_type: alertType,
     timestamp: new Date().toISOString(),
-    level: 'critical'
+    level: alertType === 'urgent' ? 'critical' : 'info'
   });
 
-  try {
-    const users = await User.find({ status: 'approved' }).select('email');
-    const emails = users.map(u => u.email).filter(Boolean);
-    await sendDangerAlert(emails);
-  } catch (err) {
-    console.error('[SupervisorBroadcast] Email error:', err.message);
+  // Emails only for urgent broadcasts
+  if (alertType === 'urgent') {
+    try {
+      const users = await User.find({ status: 'approved' }).select('email');
+      const emails = users.map(u => u.email).filter(Boolean);
+      console.log(`[SupervisorBroadcast] Sending urgent email to ${emails.length} approved user(s)`);
+      await sendDangerAlert(emails, message);
+    } catch (err) {
+      console.error('[SupervisorBroadcast] Email error:', err.message);
+    }
   }
 }
 
@@ -447,8 +453,7 @@ async function pollSystemEvents(io) {
     const robotConnected = Boolean(health?.robot_connected);
     const aiOnline = Boolean(aiHealth?.status === 'ok' || aiHealth?.status === 'online');
     const dbOnline = mongoose.connection.readyState === 1;
-    // PLC is considered online when robot arm connection is established
-    const plcOnline = robotConnected;
+    const plcOnline = Boolean(health?.plc_connected);
 
     // â”€â”€ Robot-gated AI pipeline lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (robotConnected && !_robotConnected) {
@@ -467,8 +472,19 @@ async function pollSystemEvents(io) {
         timestamp: new Date().toISOString(),
       });
       startAIPipeline(io);
+      // Re-apply any supervisor-set expiry threshold that was saved while the
+      // robot was offline (or on a previous run).
+      const { getSetting } = require('./controllers/systemController');
+      getSetting('expiry_threshold').then(threshold => {
+        if (!threshold) return;
+        fetchJsonWithTimeout(`${ROBOT_SERVICE_URL}/reference-date`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reference_date: threshold }),
+        }, 3000).catch(() => {});
+      }).catch(() => {});
     } else if (!robotConnected && _robotConnected) {
-      // Robot just went offline â€” suspend everything
+      // Robot just went offline — suspend everything
       _robotConnected = false;
       console.log('[system] Robot disconnected â€” suspending AI pipeline (no inference, no frame analysis)');
       stopAIPipeline(io);
@@ -646,9 +662,10 @@ app.post('/api/admin/danger-alert',
   authMiddleware,
   roleMiddleware(['supervisor']),
   async (req, res) => {
-    const message = req.body?.message || 'Manual danger alert triggered by supervisor';
-    await triggerSupervisorBroadcast(io, message);
-    res.json({ success: true, message: 'Danger alert sent to all users' });
+    const message   = req.body?.message    || 'Broadcast message from supervisor';
+    const alertType = req.body?.alert_type === 'info' ? 'info' : 'urgent';
+    await triggerSupervisorBroadcast(io, message, alertType);
+    res.json({ success: true, message: 'Broadcast sent to all users' });
   }
 );
 

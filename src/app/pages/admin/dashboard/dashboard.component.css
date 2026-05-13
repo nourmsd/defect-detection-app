@@ -1420,12 +1420,24 @@
 }
 .btn-save-settings:hover { filter: brightness(1.1); }
 .btn-save-settings:disabled { opacity: .6; cursor: not-allowed; }
+.broadcast-type-toggle { display: flex; gap: 8px; }
+.btn-type {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg-input);
+  color: var(--text-secondary); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all var(--transition);
+}
+.btn-type.active { background: #1e40af; border-color: #3b82f6; color: #fff; }
+.btn-type-danger.active { background: var(--red); border-color: #ef4444; color: #fff; }
+.btn-type:hover:not(.active) { border-color: var(--accent); color: var(--text-primary); }
 .btn-danger-send {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 20px; border-radius: var(--radius);
   background: var(--red); color: #fff; border: none;
   font-weight: 700; font-size: 13px; cursor: pointer; margin-top: 14px; transition: all var(--transition);
 }
+.btn-info-send { background: #1e40af; }
 .btn-danger-send:hover { filter: brightness(1.1); }
 .btn-danger-send:disabled { opacity: .6; cursor: not-allowed; }
 

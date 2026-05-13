@@ -59,10 +59,10 @@
   <!-- ═══ MAIN AREA ═══ -->
   <div class="main-area">
 
-    <!-- DANGER ALERT BANNER -->
+    <!-- BROADCAST BANNER -->
     <div class="danger-banner" *ngIf="dangerAlertActive">
-      <mat-icon class="danger-icon">error</mat-icon>
-      <span class="danger-text">DANGER ALERT: {{ dangerAlertMessage }}</span>
+      <mat-icon class="danger-icon">campaign</mat-icon>
+      <span class="danger-text">{{ dangerAlertMessage }}</span>
       <button class="danger-dismiss" (click)="dismissDangerBanner()">
         <mat-icon>close</mat-icon>
       </button>
@@ -901,36 +901,52 @@
               </p>
               <div class="settings-field">
                 <label>Threshold Date</label>
-                <input type="date" class="settings-input" [(ngModel)]="settings.expiry_threshold"
-                  placeholder="YYYY-MM-DD">
+                <input type="text" class="settings-input" [(ngModel)]="settings.expiry_threshold"
+                  placeholder="e.g. 10 AVR" maxlength="10"
+                  (input)="settings.expiry_threshold = $any($event.target).value.toUpperCase()">
                 <span class="settings-hint" *ngIf="settings.expiry_threshold">
-                  Products expiring before {{ settings.expiry_threshold | date:'dd MMM yyyy' }} → Defective
+                  Products expiring before <strong>{{ settings.expiry_threshold }}</strong> → Defective
                 </span>
                 <span class="settings-hint" *ngIf="!settings.expiry_threshold">No threshold set — all expiry dates accepted</span>
               </div>
             </div>
           </div>
 
-          <!-- Danger Alert Trigger -->
+          <!-- Broadcast Message -->
           <div class="panel settings-card">
             <div class="panel-header">
-              <mat-icon>notification_important</mat-icon>
-              <h2>Manual Danger Alert</h2>
+              <mat-icon>campaign</mat-icon>
+              <h2>Broadcast Message</h2>
             </div>
             <div class="settings-body">
               <p class="settings-desc">
-                Broadcasts an emergency alert to all workers and admins via email + in-app notification.
+                Sends a message to all workers and admins via in-app notification.
               </p>
               <div class="settings-field">
-                <label>Alert Message</label>
+                <label>Type</label>
+                <div class="broadcast-type-toggle">
+                  <button class="btn-type" [class.active]="broadcastType === 'info'"
+                    (click)="broadcastType = 'info'">
+                    <mat-icon>campaign</mat-icon> Normal
+                  </button>
+                  <button class="btn-type btn-type-danger" [class.active]="broadcastType === 'urgent'"
+                    (click)="broadcastType = 'urgent'">
+                    <mat-icon>warning</mat-icon> Urgent
+                  </button>
+                </div>
+              </div>
+              <div class="settings-field">
+                <label>Message</label>
                 <input type="text" class="settings-input"
                   [(ngModel)]="manualDangerMessage"
-                  placeholder="e.g. Conveyor fault — stop production immediately">
+                  placeholder="e.g. Team meeting at 14:00 in the break room">
               </div>
-              <button class="btn-danger-send" (click)="triggerManualDangerAlert()"
+              <button class="btn-danger-send" [class.btn-info-send]="broadcastType === 'info'"
+                [class.btn-urgent-send]="broadcastType === 'urgent'"
+                (click)="triggerManualDangerAlert()"
                 [disabled]="sendingDangerAlert || !manualDangerMessage.trim()">
                 <mat-icon>send</mat-icon>
-                {{ sendingDangerAlert ? 'Sending...' : 'Send Danger Alert' }}
+                {{ sendingDangerAlert ? 'Sending...' : 'Broadcast' }}
               </button>
             </div>
           </div>

@@ -80,7 +80,8 @@ export interface ErrorLogPayload {
 export interface DangerAlertPayload {
   message: string;
   timestamp: string;
-  level: 'critical';
+  alert_type: 'urgent' | 'info';
+  level: 'critical' | 'info';
 }
 
 export interface PendingBarcodePayload {

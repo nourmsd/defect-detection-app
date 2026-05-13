@@ -1,7 +1,20 @@
+const fs   = require('fs');
+const path = require('path');
 const SystemTimeline = require('../models/SystemTimeline');
 const ErrorLog = require('../models/ErrorLog');
 const SystemSettings = require('../models/SystemSettings');
 const { emitSocketEvent } = require('../utils/socketEvents');
+
+// Local file read by Python — survives MongoDB outages and push failures.
+const THRESHOLD_FILE = path.join(__dirname, '..', 'expiry_threshold.json');
+
+function _writeThresholdFile(value) {
+  try {
+    fs.writeFileSync(THRESHOLD_FILE, JSON.stringify({ expiry_threshold: value ?? null }));
+  } catch (err) {
+    console.warn('[settings] could not write threshold file:', err.message);
+  }
+}
 
 /* =========================================================
    HELPERS
@@ -168,11 +181,39 @@ async function getSettings(req, res) {
   }
 }
 
+async function _pushThresholdToRobot(threshold) {
+  const url = `${process.env.ROBOT_SERVICE_URL || 'http://127.0.0.1:5002'}/reference-date`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference_date: threshold ?? null }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      console.log(`[settings] expiry threshold pushed to robot service → "${threshold}"`);
+    } else {
+      const text = await res.text().catch(() => '');
+      console.warn(`[settings] /reference-date push failed HTTP ${res.status}: ${text.slice(0, 200)}`);
+    }
+  } catch (err) {
+    clearTimeout(timer);
+    console.warn(`[settings] /reference-date push error: ${err.message}`);
+  }
+}
+
 async function updateSettings(req, res) {
   try {
     const { daily_target, expiry_threshold } = req.body;
     if (daily_target !== undefined) await setSetting('daily_target', Number(daily_target));
-    if (expiry_threshold !== undefined) await setSetting('expiry_threshold', expiry_threshold);
+    if (expiry_threshold !== undefined) {
+      await setSetting('expiry_threshold', expiry_threshold);
+      _writeThresholdFile(expiry_threshold);
+      await _pushThresholdToRobot(expiry_threshold);
+    }
     res.json({ success: true, message: 'Settings updated' });
   } catch (err) {
     res.status(500).json({ message: 'Error updating settings' });

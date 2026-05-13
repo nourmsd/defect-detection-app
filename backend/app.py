@@ -284,6 +284,7 @@ def main() -> None:
         with _pending_bc_lock:
             _pending_bc_slot["text"] = text
             _pending_bc_slot["type"] = btype
+        ai.set_prescan_barcode(text, btype)
         _emit_pipeline_event("pending_barcode", {
             "barcode": text,
             "barcode_type": btype or "",
@@ -297,6 +298,7 @@ def main() -> None:
             had = _pending_bc_slot["text"]
             _pending_bc_slot["text"] = None
             _pending_bc_slot["type"] = None
+        ai.set_prescan_barcode(None, None)
         # Re-arm the prescan loop so the next product to pass under the
         # phone camera fires a fresh capture event. Reset both the dedupe
         # key (so the same barcode on a new physical product fires) and
@@ -636,10 +638,6 @@ def main() -> None:
         with result_lock:
             shared_result.done = True
 
-    # [BARCODE DISABLED] — no fullscreen split anymore; default window is fine
-    # cv2.namedWindow(DISPLAY_WINDOW_NAME, cv2.WINDOW_NORMAL)
-    # cv2.setWindowProperty(DISPLAY_WINDOW_NAME, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-
     # ── Main loop ─────────────────────────────────────────────────────────────
     try:
         while True:
@@ -801,6 +799,13 @@ def main() -> None:
                     # endless re-analysis of the same product.
                     state          = "WAITING_REMOVAL"
                     absence_frames = 0
+                    # Drop bbox overlays immediately — their coordinates are
+                    # frozen from the inspection frame and will appear at the
+                    # wrong position as the conveyor moves the product away.
+                    with result_lock:
+                        shared_result.flavor_bbox    = None
+                        shared_result.barcode_bbox   = None
+                        shared_result.expiry_outputs = []
                     log.info(
                         f"[state] RESULT done — waiting for product removal "
                         f"({ABSENCE_FRAMES} clean frames)."
@@ -814,12 +819,17 @@ def main() -> None:
                     absence_frames = 0
                 else:
                     absence_frames += 1
-                    # The previous product is gone. Clear the stale bboxes so
-                    # build_display() doesn't keep drawing the flavor/barcode
-                    # corner overlay over an empty conveyor.
-                    with result_lock:
-                        shared_result.flavor_bbox  = None
-                        shared_result.barcode_bbox = None
+                    if absence_frames == 1:
+                        # First absence frame — product is gone; wipe the
+                        # diagnostics panel so the old inspection's text
+                        # (flavor, barcode, verdict) does not linger on screen
+                        # while waiting for the counter to fill.
+                        with result_lock:
+                            shared_result.flavor_text    = None
+                            shared_result.barcode_text   = None
+                            shared_result.barcode_type   = None
+                            shared_result.final_label    = None
+                            shared_result.defect_type    = None
                 frac = min(absence_frames / ABSENCE_FRAMES, 1.0)
                 display = build_display(frame, shared_result, state, frac, fps, scan_attempts)
                 # Don't re-arm scanning while the robot is still working its

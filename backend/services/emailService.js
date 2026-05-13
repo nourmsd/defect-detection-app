@@ -72,9 +72,6 @@ const sendApprovedEmail = (email) => {
         <p style="color:#6b7ea0;font-size:14px;line-height:1.6;margin:0 0 20px;text-align:center">
           Welcome! Your account has been verified by the administrator.<br>You can now log in to the system.
         </p>
-        <div style="text-align:center">
-          <a href="#" style="display:inline-block;background:linear-gradient(90deg,#4361ee,#7c3aed);color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;letter-spacing:.04em">Sign In Now</a>
-        </div>
       </div>
       <div style="padding:16px 32px;border-top:1px solid #eef1f7;font-size:11px;color:#b0bec5;text-align:center">
         © ${new Date().getFullYear()} AI Vision QC — Smart Quality Control System
@@ -84,27 +81,32 @@ const sendApprovedEmail = (email) => {
         "Your account has been verified. You can now log in.");
 };
 
-// Scenario 3: Danger alert — sent to all workers & admins
-const sendDangerAlert = async (recipientEmails = []) => {
-    if (!recipientEmails.length) return;
+// Scenario 3: Urgent broadcast — sent to all approved users with the supervisor's message
+const sendDangerAlert = async (recipientEmails = [], broadcastMessage = '') => {
+    if (!recipientEmails.length) {
+        console.warn('[Email] sendDangerAlert called with empty recipients list — skipping');
+        return;
+    }
+
+    const displayMessage = broadcastMessage || 'An urgent message has been broadcast by the supervisor.';
 
     const html = `
     <div style="font-family:Inter,Arial,sans-serif;max-width:520px;margin:0 auto;background:#fff0f0;border-radius:12px;overflow:hidden;border:2px solid #f87171">
       <div style="background:linear-gradient(90deg,#dc2626,#b91c1c);padding:28px 32px">
-        <h1 style="margin:0;color:#fff;font-size:20px;font-weight:800;letter-spacing:-.3px">⚠ AI Vision QC — DANGER ALERT</h1>
-        <p style="margin:4px 0 0;color:rgba(255,255,255,.8);font-size:12px;letter-spacing:.12em;text-transform:uppercase">Emergency Notification</p>
+        <h1 style="margin:0;color:#fff;font-size:20px;font-weight:800;letter-spacing:-.3px">⚠ AI Vision QC — URGENT ALERT</h1>
+        <p style="margin:4px 0 0;color:rgba(255,255,255,.8);font-size:12px;letter-spacing:.12em;text-transform:uppercase">Urgent Broadcast from Supervisor</p>
       </div>
       <div style="padding:32px">
         <div style="text-align:center;margin-bottom:20px">
           <div style="width:60px;height:60px;background:#fee2e2;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:30px">🚨</div>
         </div>
-        <h2 style="margin:0 0 12px;color:#991b1b;font-size:18px;text-align:center">System in Danger!</h2>
-        <p style="color:#7f1d1d;font-size:15px;line-height:1.7;margin:0 0 20px;text-align:center;font-weight:500">
-          Please check your app, the system is in danger!
-        </p>
-        <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:16px 20px;font-size:13px;color:#991b1b;text-align:center">
-          Open the app immediately and check the <strong>Error Logs</strong> section for details.
+        <h2 style="margin:0 0 12px;color:#991b1b;font-size:18px;text-align:center">Urgent Message</h2>
+        <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:20px 24px;font-size:15px;color:#7f1d1d;text-align:center;font-weight:600;line-height:1.6;margin-bottom:20px">
+          ${displayMessage}
         </div>
+        <p style="color:#991b1b;font-size:13px;text-align:center;margin:0">
+          Log in to the app for more details.
+        </p>
       </div>
       <div style="padding:16px 32px;border-top:1px solid #fca5a5;font-size:11px;color:#b0bec5;text-align:center">
         © ${new Date().getFullYear()} AI Vision QC — Smart Quality Control System
@@ -112,12 +114,14 @@ const sendDangerAlert = async (recipientEmails = []) => {
     </div>`;
 
     const promises = recipientEmails.map(email =>
-        sendEmail(email, "⚠ DANGER ALERT — Check Your App Immediately", html,
-            "Please check your app, the system is in danger!")
+        sendEmail(email, `⚠ URGENT — ${displayMessage}`, html,
+            `Urgent message from supervisor: ${displayMessage}`)
     );
 
-    await Promise.allSettled(promises);
-    console.log(`[Email] Danger alert sent to ${recipientEmails.length} recipient(s)`);
+    const results = await Promise.allSettled(promises);
+    const failed = results.filter(r => r.status === 'rejected');
+    console.log(`[Email] Urgent broadcast sent to ${recipientEmails.length} recipient(s)${failed.length ? `, ${failed.length} failed` : ''}`);
+    if (failed.length) failed.forEach(f => console.error('[Email] Send error:', f.reason?.message));
 };
 
 // Scenario 4: System error alert — sent only to currently-online workers
@@ -156,10 +160,47 @@ const sendSystemErrorAlert = async (recipientEmails = []) => {
     console.log(`[Email] System error alert sent to ${recipientEmails.length} online worker(s)`);
 };
 
+// Scenario 5: Emergency stop triggered — sent to all approved users
+const sendEmergencyStopAlert = async (recipientEmails = []) => {
+    if (!recipientEmails.length) return;
+
+    const html = `
+    <div style="font-family:Inter,Arial,sans-serif;max-width:520px;margin:0 auto;background:#fff0f0;border-radius:12px;overflow:hidden;border:2px solid #f87171">
+      <div style="background:linear-gradient(90deg,#dc2626,#b91c1c);padding:28px 32px">
+        <h1 style="margin:0;color:#fff;font-size:20px;font-weight:800;letter-spacing:-.3px">⚠ AI Vision QC — EMERGENCY STOP</h1>
+        <p style="margin:4px 0 0;color:rgba(255,255,255,.8);font-size:12px;letter-spacing:.12em;text-transform:uppercase">Urgent Robot Alert</p>
+      </div>
+      <div style="padding:32px">
+        <div style="text-align:center;margin-bottom:20px">
+          <div style="width:60px;height:60px;background:#fee2e2;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:30px">🛑</div>
+        </div>
+        <h2 style="margin:0 0 12px;color:#991b1b;font-size:18px;text-align:center">Robot Emergency Stop Activated</h2>
+        <p style="color:#7f1d1d;font-size:15px;line-height:1.7;margin:0 0 20px;text-align:center;font-weight:500">
+          Please check your app — the robot needs an emergency stop right now.
+        </p>
+        <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:16px 20px;font-size:13px;color:#991b1b;text-align:center">
+          Open the application immediately and inspect the robot's status in the <strong>Robot Control</strong> panel.
+        </div>
+      </div>
+      <div style="padding:16px 32px;border-top:1px solid #fca5a5;font-size:11px;color:#b0bec5;text-align:center">
+        © ${new Date().getFullYear()} AI Vision QC — Smart Quality Control System
+      </div>
+    </div>`;
+
+    const promises = recipientEmails.map(email =>
+        sendEmail(email, "🛑 EMERGENCY STOP — Robot Requires Immediate Attention", html,
+            "Please check your app, the robot needs an emergency stop right now.")
+    );
+
+    await Promise.allSettled(promises);
+    console.log(`[Email] Emergency stop alert sent to ${recipientEmails.length} recipient(s)`);
+};
+
 module.exports = {
     sendEmail,
     sendPendingEmail,
     sendApprovedEmail,
     sendDangerAlert,
     sendSystemErrorAlert,
+    sendEmergencyStopAlert,
 };

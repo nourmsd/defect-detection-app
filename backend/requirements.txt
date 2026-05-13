@@ -1,0 +1,12 @@
+flask
+flask-cors
+pyniryo
+ultralytics
+torch
+torchvision
+opencv-python
+numpy
+transformers
+python-snap7
+pyzbar
+requests

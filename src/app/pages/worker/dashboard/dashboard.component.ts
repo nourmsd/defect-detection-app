@@ -134,6 +134,7 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   /* ── Danger alert banner ───────────────────────────────────── */
   dangerAlertActive = false;
   dangerAlertMessage = '';
+  dangerAlertType: 'urgent' | 'info' = 'info';
 
   /* ── Command loading states ─────────────────────────────── */
   cmdLoading: Record<string, boolean> = {};
@@ -234,8 +235,13 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
             this.ngZone.run(() => {
               const dp = payload as DangerAlertPayload;
               this.dangerAlertActive = true;
-              this.dangerAlertMessage = dp.message || 'System in danger!';
-              this.toast.error(`DANGER: ${dp.message}`, 12000);
+              this.dangerAlertMessage = dp.message || '';
+              this.dangerAlertType = dp.alert_type === 'urgent' ? 'urgent' : 'info';
+              if (this.dangerAlertType === 'urgent') {
+                this.toast.error(`🚨 ${dp.message}`, 12000);
+              } else {
+                this.toast.info(`📢 ${dp.message}`, 8000);
+              }
               this.cdr.detectChanges();
             });
           }
@@ -613,7 +619,7 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   private applySystemHealth(health: SystemHealthSocketPayload): void {
     this.fps = Number(health?.fps) || 0;
     this.systemLinks.camera = health?.stream !== 'offline';
-    this.plcConnected = Boolean((health as any)?.plc === 'online' || (health as any)?.plc === true);
+    this.plcConnected = health?.plc_status === 'online';
     this.streamHealth = {
       ...this.streamHealth,
       status: health?.stream || 'offline',
@@ -630,6 +636,7 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
         this.streamHealth = health;
         this.systemLinks.camera = health.status !== 'offline' && !health.stream_stale;
         this.applyRobotConnectivity(Boolean(health.robot_connected));
+        this.plcConnected = Boolean(health.plc_connected);
       },
       error: () => {
         this.systemLinks.camera = false;

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PLC HMI Control</title>
+    <style>
+        /* Centers everything in the viewport */
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh; /* Takes full height of the browser */
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+        }
+
+        /* Container for buttons to keep them side-by-side */
+        .controls {
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+
+        .online { color: green; font-weight: bold; }
+        .offline { color: red; font-weight: bold; }
+        
+        h1 { margin-bottom: 10px; }
+        h2 { margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+    <h1>Conveyor Control</h1>
+    
+    <div class="controls">
+        <button onclick="control('start')">START</button>
+        <button onclick="control('stop')">STOP</button>
+    </div>
+
+    <h2>Status</h2>
+    <p id="status">Loading...</p>
+
+    <script>
+    async function control(action) {
+        try {
+            const res = await fetch(`http://localhost:5000/conveyor/${action}`, {
+                method: "POST"
+             });
+            const result = await res.json();
+            console.log(result.status);
+        } catch (err) {
+            alert("Error sending command");
+        }
+    }
+
+    async function getStatus() {
+        try {
+            const res = await fetch("http://localhost:5000/status");
+            const data = await res.json();
+
+            const statusEl = document.getElementById("status");
+            const connStatus = data.connected ? "CONNECTED" : "DISCONNECTED";
+            const plcStatus = data.plc_online ? "RUNNING" : "STOPPED";
+            
+            statusEl.innerHTML = `Bridge: ${connStatus} | PLC Logic: ${plcStatus}`;
+            statusEl.className = data.connected ? "online" : "offline";
+        } catch (err) {
+            document.getElementById("status").innerText = "Bridge Server Offline";
+            document.getElementById("status").className = "offline";
+        }
+    }
+
+    setInterval(getStatus, 1000);
+    </script>
+</body>
+</html>

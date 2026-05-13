@@ -54,6 +54,7 @@ export interface StreamHealth {
   stream_stale: boolean;
   last_frame_age_sec: number;
   camera_status: string;
+  plc_connected?: boolean;
 }
 
 @Injectable({
@@ -235,8 +236,8 @@ export class ApiService {
   }
 
   /* ── Danger Alert (manual trigger) ──────────────────────── */
-  triggerDangerAlert(message?: string): Observable<any> {
-    return this.http.post(`${this.baseUrl}/admin/danger-alert`, { message }, {
+  triggerDangerAlert(message: string, alertType: 'urgent' | 'info' = 'urgent'): Observable<any> {
+    return this.http.post(`${this.baseUrl}/admin/danger-alert`, { message, alert_type: alertType }, {
       headers: this.authHeaders
     }).pipe(timeout(API_TIMEOUT_MS));
   }

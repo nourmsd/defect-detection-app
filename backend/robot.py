@@ -26,6 +26,7 @@ from config import (
     GRIPPER_SPEED, POLL_INTERVAL_S,
     INSPECTION_POSE, PICK_POSE, INTER_POSE1, INTER_POSE2, REJECT_BIN_POSE,
     ROBOT_ROSBRIDGE_PORT, ROBOT_DEFECTIVE_PROGRAM, ROBOT_DEFECTIVE_PROGRAM_LANGUAGE,
+    _plc_client, _SNAP7_AVAILABLE, plc_heartbeat,
 )
 import os
 
@@ -1229,15 +1230,15 @@ def reference_date_route():
     """GET → current cutoff. POST {"reference_date": "12 JAN"} → set it."""
     global _reference_date
     # Local import to avoid circular dependency at module load time.
-    from ai import _parse_expiry_date
+    from ai import _parse_dd_mmm
 
     if request.method == "POST":
         body = request.get_json(silent=True) or {}
         raw  = body.get("reference_date")
         if raw is not None and not isinstance(raw, str):
             return jsonify({"error": "reference_date must be a string or null"}), 400
-        if raw and _parse_expiry_date(raw) is None:
-            return jsonify({"error": f"Unparsable date: {raw!r}. Use 'DD MMM' (e.g. '12 JAN')."}), 400
+        if raw and _parse_dd_mmm(raw) is None:
+            return jsonify({"error": f"Unparsable date: {raw!r}. Use 'DD MMM' (e.g. '12 AVR')."}), 400
         with _reference_date_lock:
             _reference_date = (raw.strip() if raw else None)
             current = _reference_date
@@ -1361,11 +1362,64 @@ def _stream_health():
     with _camera_lock:
         have_frame = _camera_frame_bgr is not None
         count      = _camera_frame_count
+    plc_tcp, plc_online = plc_heartbeat()
     return jsonify({
         "status":           "ok" if (ok and have_frame) else "degraded",
         "robot_connected":  ok,
         "frames_delivered": count,
+        "plc_connected":    plc_tcp,
+        "plc_online_bit":   plc_online,
     })
+
+
+@stream_app.route("/plc/which-python", methods=["GET"])
+def _plc_which_python():
+    import sys
+    return jsonify({"executable": sys.executable, "version": sys.version})
+
+
+@stream_app.route("/plc/test", methods=["GET"])
+def _plc_test():
+    """Diagnostic route — runs the exact same steps as the working test.py
+    and reports which step passes or fails. Hit http://localhost:5001/plc/test"""
+    from config import _SNAP7_AVAILABLE, _plc_client, PLC_IP, PLC_RACK, PLC_SLOT, PLC_DB_NUMBER
+    steps = {}
+
+    steps["snap7_available"] = _SNAP7_AVAILABLE
+    if not _SNAP7_AVAILABLE:
+        return jsonify({"ok": False, "steps": steps, "error": "snap7 not installed in this Python env"})
+
+    steps["client_created"] = _plc_client is not None
+    if _plc_client is None:
+        return jsonify({"ok": False, "steps": steps, "error": "snap7.client.Client() returned None"})
+
+    try:
+        already = _plc_client.get_connected()
+        steps["already_connected"] = already
+        if not already:
+            _plc_client.connect(PLC_IP, PLC_RACK, PLC_SLOT)
+        steps["connected"] = _plc_client.get_connected()
+    except Exception as exc:
+        steps["connected"] = False
+        return jsonify({"ok": False, "steps": steps, "error": f"connect() failed: {type(exc).__name__}: {exc}"})
+
+    try:
+        data = _plc_client.db_read(PLC_DB_NUMBER, 0, 1)
+        steps["db_read"] = True
+        steps["db_read_hex"] = data.hex()
+    except Exception as exc:
+        steps["db_read"] = False
+        return jsonify({"ok": False, "steps": steps, "error": f"db_read() failed: {type(exc).__name__}: {exc}"})
+
+    try:
+        from snap7.util import get_bool
+        steps["bit_0_0"] = bool(get_bool(data, 0, 0))
+        steps["bit_0_1"] = bool(get_bool(data, 0, 1))
+        steps["bit_0_2"] = bool(get_bool(data, 0, 2))
+    except Exception as exc:
+        return jsonify({"ok": False, "steps": steps, "error": f"get_bool() failed: {exc}"})
+
+    return jsonify({"ok": True, "steps": steps})
 
 
 @stream_app.route("/robot-health", methods=["GET"])
