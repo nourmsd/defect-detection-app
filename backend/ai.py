@@ -1,9 +1,3 @@
-"""
-AI module: Flask MJPEG stream server (:5003), FrameGrabber, AI pipelines
-(YOLO + TrOCR flavor, ResNet expiry classifier), defect classification, and
-the cv2 diagnostics overlay.
-"""
-
 import os
 import pathlib
 import threading
@@ -37,14 +31,8 @@ from config import (
     DEBUG_SAVE_CROPS, DEBUG_CROP_DIR,
     IMAGENET_MEAN, IMAGENET_STD, _CLAHE,
 )
-# ═══════════════════════════════════════════════════════════════════════════════
-# SHARED FLASK APPLICATION (AI stream)
-# ═══════════════════════════════════════════════════════════════════════════════
 ai_app = Flask("ai_stream_server")
 CORS(ai_app)
-# ═══════════════════════════════════════════════════════════════════════════════
-# FRAME GRABBER
-# ═══════════════════════════════════════════════════════════════════════════════
 class FrameGrabber(threading.Thread):
     """Background thread: always keeps the latest frame.
     Source can be an MJPEG URL ('http://...') or a webcam index ('0', '1', ...
@@ -52,13 +40,12 @@ class FrameGrabber(threading.Thread):
 
     def __init__(self, source) -> None:
         super().__init__(daemon=True, name="frame-grabber")
-        # Accept ints, numeric strings, or full URLs.
         if isinstance(source, int):
             self._source = source
         else:
             s = str(source).strip()
             self._source = int(s) if s.isdigit() else s
-        self._url   = str(source)  # human-readable label for logs
+        self._url   = str(source) 
         self._lock  = threading.Lock()
         self._frame: Optional[np.ndarray] = None
         self._count = 0
@@ -70,7 +57,6 @@ class FrameGrabber(threading.Thread):
             cap = None
             try:
                 if isinstance(self._source, int):
-                    # DSHOW backend is faster + more reliable for virtual webcams on Windows
                     cap = cv2.VideoCapture(self._source, cv2.CAP_DSHOW)
                 else:
                     cap = cv2.VideoCapture(self._source)
@@ -107,20 +93,11 @@ class FrameGrabber(threading.Thread):
 
 
 class InProcessFrameGrabber:
-    """Drop-in replacement for FrameGrabber that pulls frames directly from
-    robot.get_camera_frame_bgr() instead of reading an MJPEG URL. Eliminates the
-    second TCP connection to the Niryo arm — there is now only ONE pyniryo
-    NiryoRobot object in the whole system, owned by robot.connect_robot()."""
-
     def __init__(self) -> None:
-        # Lazy-import to avoid a circular dependency at module load time.
         import robot as _robot_mod
         self._robot_mod = _robot_mod
 
     def start(self) -> None:
-        # No-op: the real grabber thread lives in robot.py and is started by
-        # robot.connect_robot(). Kept as a method so the call sites that use
-        # FrameGrabber.start() don't need to change.
         return
 
     def get_latest(self) -> Optional[Tuple[np.ndarray, int]]:
@@ -128,29 +105,16 @@ class InProcessFrameGrabber:
 
     def stop(self) -> None:
         return
-# ═══════════════════════════════════════════════════════════════════════════════
-# AI MJPEG STREAM  (:5003/ai_stream)
-# ═══════════════════════════════════════════════════════════════════════════════
 _ai_frame_lock    = threading.Lock()
 _ai_latest_frame: Optional[bytes] = None
-
-# DroidCam barcode stream — annotated phone-camera feed.
 _barcode_frame_lock:    threading.Lock         = threading.Lock()
 _barcode_latest_frame:  Optional[bytes]        = None
-
-# Pre-scan barcode slot, populated by app.py's prescan loop. The diagnostic
-# panel reads this when the niryo gripper-cam couldn't decode (the usual case
-# — the cup's wrap-around barcode rarely faces the gripper), so the BARCODE
-# line on the AI stream still shows the value the operator scanned with the
-# phone camera before placing the cup on the conveyor.
 _prescan_barcode_lock:  threading.Lock          = threading.Lock()
 _prescan_barcode_text:  Optional[str]           = None
 _prescan_barcode_type:  Optional[str]           = None
 
 
 def set_prescan_barcode(text: Optional[str], btype: Optional[str] = None) -> None:
-    """Called by app.py whenever the prescan slot changes — keeps the AI
-    diagnostic overlay in sync with what the dashboard shows."""
     global _prescan_barcode_text, _prescan_barcode_type
     with _prescan_barcode_lock:
         _prescan_barcode_text = text
@@ -176,8 +140,6 @@ def _ai_stream_route():
 
 @ai_app.route("/barcode_stream")
 def _barcode_stream_route():
-    """MJPEG of the DroidCam phone camera with YOLO bbox + decoded text overlay.
-    Open in a browser tab next to /ai_stream to see both feeds live."""
     def _generate():
         while True:
             with _barcode_frame_lock:
@@ -208,8 +170,6 @@ def _publish_mjpeg(vis_frame: np.ndarray) -> None:
 
 
 def _publish_barcode_mjpeg(vis_frame: np.ndarray) -> None:
-    """Push a JPEG of the DroidCam barcode-camera frame (annotated with YOLO
-    bbox + decoded text) onto /barcode_stream."""
     global _barcode_latest_frame
     try:
         _, buf = cv2.imencode(".jpg", vis_frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
@@ -219,40 +179,12 @@ def _publish_barcode_mjpeg(vis_frame: np.ndarray) -> None:
         pass
 
 
-# [BARCODE DISABLED] — compose_combined_view stub (original body kept as a docstring)
-def _compose_combined_view_DISABLED(ai_view, target_w=1920, target_h=1080):
-    """Disabled along with the rest of the barcode pipeline. Original body:
-
-    with _barcode_view_lock:
-        bc_view = _barcode_view_latest
-    if bc_view is None:
-        bc_view = np.full((360, 640, 3), (15, 18, 24), dtype=np.uint8)
-        cv2.putText(bc_view, "BARCODE STREAM STARTING...", (40, 190),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 165, 255), 2, cv2.LINE_AA)
-    ...   (50/50 letterbox compose, see git history)
-    """
-    return None
-
 
 def _start_ai_stream_server() -> None:
     ai_app.run(host="0.0.0.0", port=AI_STREAM_PORT, threaded=True)
 
 
-# [BARCODE DISABLED] — build_barcode_display stub (original body kept as a docstring)
-def _build_barcode_display_DISABLED(frame, bc_text, bc_type, bc_bbox, fps):
-    """Disabled along with the rest of the barcode pipeline. Original body:
-
-    Annotated DroidCam frame with bbox + decoded barcode text. Drew corner
-    brackets, pill labels, header/footer strips. See git history for the full
-    implementation; reactivate by uncommenting the block tagged
-    [BARCODE DISABLED] in this file.
-    """
-    return None
-
-
 def _publish_splash(status: str, detail: str = "") -> None:
-    """Render a placeholder diagnostics frame so /ai_stream has something to serve
-    before the state machine produces its first real annotated frame."""
     panel_w = globals().get("_PANEL_W", 340)
     h, w = 540, 960 + panel_w
     frame = np.full((h, w, 3), (12, 16, 24), dtype=np.uint8)
@@ -267,14 +199,6 @@ def _publish_splash(status: str, detail: str = "") -> None:
     cv2.putText(frame, datetime.now().strftime("%H:%M:%S"), (w - 140, h - 24),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, (110, 110, 110), 1, cv2.LINE_AA)
     _publish_mjpeg(frame)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# EXPIRY-DATE PARSING & DEFECT CLASSIFICATION
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Month-name → 1-indexed month number.  Supports English + French abbreviations
-# because the fine-tuned TrOCR model was trained on French yogurt labels.
 _MONTH_MAP: Dict[str, int] = {
     "JAN": 1,
     "FEB": 2, "FEV": 2,
@@ -292,8 +216,6 @@ _MONTH_MAP: Dict[str, int] = {
 
 
 def _parse_dd_mmm(text: Optional[str]) -> Optional[Tuple[int, int]]:
-    """Parse 'DD MMM' (e.g. '06 AVR', '10 MAI') → (month, day) tuple.
-    Returns None if the text cannot be parsed."""
     if not text:
         return None
     parts = text.strip().upper().split()
@@ -309,8 +231,8 @@ def _parse_dd_mmm(text: Optional[str]) -> Optional[Tuple[int, int]]:
     return (month, day)
 
 
-BLANK_CROP_STD_THRESHOLD  = 18.0   # grayscale std below this → unicolor flat sticker
-BLANK_CROP_EDGE_THRESHOLD = 0.035  # high-threshold edge-pixel ratio below this → no print
+BLANK_CROP_STD_THRESHOLD  = 18.0   
+BLANK_CROP_EDGE_THRESHOLD = 0.035  
 
 
 def _crop_is_blank(crop_bgr: Optional[np.ndarray]) -> bool:
@@ -328,9 +250,6 @@ def _classify_defect(
     expiry_outputs: List[Dict],
     detected_date:  Optional[str],
 ) -> Optional[str]:
-    # Late import to avoid circular dependency: robot.py imports ai (for splash etc.)
-    # — but actually ai is independent of robot. We need _reference_date which lives
-    # in robot.py. Import at call-time.
     import robot as _robot_mod
 
     if not expiry_outputs:
@@ -342,8 +261,6 @@ def _classify_defect(
     )
     if not has_readable:
         return "blurry"
-    # Primary: read from the local file written by Node.js on every settings save.
-    # This is reliable regardless of push/MongoDB availability.
     ref = None
     try:
         import json as _json
@@ -352,7 +269,6 @@ def _classify_defect(
             ref = _json.load(_f).get("expiry_threshold") or None
     except Exception:
         pass
-    # Fallback: in-memory value set by POST /reference-date
     if not ref:
         with _robot_mod._reference_date_lock:
             ref = _robot_mod._reference_date
@@ -365,12 +281,6 @@ def _classify_defect(
             log.info(f"[classify] → EXPIRED")
             return "expired"
     return None
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PIPELINE A — FLAVOR  (YOLO → TrOCR)
-# ═══════════════════════════════════════════════════════════════════════════════
-
 class TrOCRReader:
     def __init__(self, model_path: str) -> None:
         self.device    = "cuda" if torch.cuda.is_available() else "cpu"
@@ -412,28 +322,11 @@ def run_flavor_pipeline(
         cv2.imwrite(f"{FLAVOR_SAVE_DIR}/{safe_name}_{ts}.jpg", crop)
         break
     return flavor_text, flavor_bbox
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PIPELINE C — BARCODE  (YOLO → pyzbar, on the robot camera frame)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-BARCODE_UPSCALE = 3.0   # how much to enlarge the crop before decoding
+BARCODE_UPSCALE = 3.0  
 
 
 def _enhance_for_barcode(crop_bgr: np.ndarray) -> List[Tuple[str, np.ndarray]]:
-    """Build several preprocessed variants of a low-res barcode crop, ordered
-    from lightest to most aggressive. pyzbar prefers different forms depending
-    on lighting — first one that decodes wins.
-
-    Why each step matters with the Niryo's low-res camera:
-      • Upscale 3× (cubic) — pyzbar's edge-detector needs crisp transitions; a
-        ~30-pixel-wide barcode rarely decodes natively.
-      • CLAHE — flattens uneven illumination from the gripper-mounted camera.
-      • Unsharp-mask — restores edge sharpness lost by the cubic upscale.
-      • Otsu — global binarisation; works well when contrast is uniform.
-      • Adaptive — local binarisation; handles glare / shadows on the cap.
-    """
+   
     gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
     h, w = gray.shape
     up = cv2.resize(gray,
@@ -457,18 +350,6 @@ def run_barcode_pipeline(
     frame: np.ndarray,
     yolo:  YOLO,
 ) -> Tuple[Optional[str], Optional[str], Optional[Tuple[int,int,int,int]], Optional[np.ndarray]]:
-    """Locate barcode via YOLO, then aggressively enhance the crop and try
-    pyzbar across multiple variants × rotations. The Niryo's gripper-camera is
-    low-res, so the raw crop almost never decodes — preprocessing is essential.
-
-    Returns (barcode_data, barcode_type, bbox, enhanced_preview):
-      barcode_data       — decoded text, None if no decode
-      barcode_type       — symbology (EAN13, CODE128, QR…)
-      bbox               — original-frame bbox used for overlay
-      enhanced_preview   — sharp grayscale variant of the crop (for the
-                           diagnostics panel thumbnail). Always set when a
-                           bbox was found, even if decoding failed.
-    """
     results = yolo(frame, verbose=False, conf=BARCODE_CONF)[0]
     if results.boxes is None:
         return None, None, None, None
@@ -479,22 +360,13 @@ def run_barcode_pipeline(
         if yolo.names[int(box.cls)] != BARCODE_CLASS_NAME:
             continue
         x1, y1, x2, y2 = map(int, box.xyxy[0])
-        # Asymmetric crop expansion. pyzbar needs a "quiet zone" (white margin)
-        # of ~10× the narrowest bar width on the side the bars *end* at — i.e.
-        # in the direction perpendicular to the bars. We don't know the bar
-        # orientation in advance, so we pick by aspect ratio:
-        #   bbox wider than tall  → bars are horizontal → extend Y much more
-        #   bbox taller than wide → bars are vertical   → extend X much more
-        # Either way, the bar-PARALLEL axis just needs a small pad to capture
-        # any edge bars YOLO clipped off; the bar-PERPENDICULAR axis needs a
-        # generous quiet zone so pyzbar can lock onto start/stop guards.
         bw, bh = (x2 - x1), (y2 - y1)
         if bw >= bh:
-            pad_x = max(8,  int(bw * 0.10))   # bars horizontal: minor X pad
-            pad_y = max(30, int(bh * 1.50))   # generous Y quiet zone
+            pad_x = max(8,  int(bw * 0.10))   
+            pad_y = max(30, int(bh * 1.50))   
         else:
-            pad_x = max(30, int(bw * 1.50))   # bars vertical: generous X quiet zone
-            pad_y = max(8,  int(bh * 0.10))   # minor Y pad
+            pad_x = max(30, int(bw * 1.50))  
+            pad_y = max(8,  int(bh * 0.10))  
         cx1, cy1 = max(0, x1 - pad_x), max(0, y1 - pad_y)
         cx2, cy2 = min(w - 1, x2 + pad_x), min(h - 1, y2 + pad_y)
         crop = frame[cy1:cy2, cx1:cx2]
@@ -502,10 +374,7 @@ def run_barcode_pipeline(
             continue
 
         variants = _enhance_for_barcode(crop)
-        # Use the "sharp" variant as the preview thumbnail shown in the panel.
         last_preview = next((v for n, v in variants if n == "sharp"), variants[0][1])
-
-        # Try every (variant × rotation) combination — first decode wins.
         rotations = [(None, "0°"),
                      (cv2.ROTATE_90_CLOCKWISE, "90°"),
                      (cv2.ROTATE_180,          "180°"),
@@ -531,17 +400,9 @@ def run_barcode_pipeline(
             f"[BARCODE] YOLO bbox at ({x1},{y1})-({x2},{y2}) found but no "
             f"variant×rotation decoded after {len(variants)*len(rotations)} attempts."
         )
-        # Even on failure, return the bbox + preview so the operator can see
-        # the system is trying — the dashboard will still show the thumbnail.
         return None, None, (x1, y1, x2, y2), last_preview
 
     return None, None, None, None
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PIPELINE B — EXPIRY DATE  (YOLO → ResNet multi-head classifier)
-# ═══════════════════════════════════════════════════════════════════════════════
-
 _debug_crop_counter = 0
 
 
@@ -649,10 +510,6 @@ def run_expiry_pipeline(
     meta:       Dict,
     device:     torch.device,
 ) -> List[Dict]:
-    """
-    YOLO finds expiry crops → 5-shot majority vote through ResNet classifier.
-    Zero confident date reads after all 5 runs → DEFECTIVE.
-    """
     results: List[Dict] = []
     yolo_res = yolo.predict(
         source=snapshot, conf=YOLO_CONF_THRESHOLD,
@@ -693,15 +550,12 @@ def run_expiry_pipeline(
                 votes.append(c["text"])
 
         if defect_votes > EXPIRY_RUNS // 2:
-            # Majority of runs explicitly flagged defective by the model
             status, best_text, best_conf = "DEFECTIVE", "DEFECTIVE", 0.0
         elif votes:
-            # At least one confident valid date — take the majority vote
             best_text = Counter(votes).most_common(1)[0][0]
             status    = "NORMAL"
             best_conf = len([v for v in votes if v == best_text]) / EXPIRY_RUNS
         else:
-            # Zero confident date reads after all 5 runs → DEFECTIVE
             log.warning(
                 f"[EXPIRY] No valid date in {EXPIRY_RUNS} classifier runs "
                 f"(defect_votes={defect_votes}, conf_votes=0) — forcing DEFECTIVE"
@@ -730,12 +584,6 @@ def run_expiry_pipeline(
         })
 
     return results
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SHARED RESULT DATACLASS
-# ═══════════════════════════════════════════════════════════════════════════════
-
 @dataclass
 class InspectionResult:
     flavor_text:    Optional[str]                    = None
@@ -744,24 +592,17 @@ class InspectionResult:
     barcode_text:    Optional[str]                    = None
     barcode_type:    Optional[str]                    = None
     barcode_bbox:    Optional[Tuple[int,int,int,int]] = None
-    barcode_preview: Optional[np.ndarray]             = None  # enhanced grayscale crop (sharp variant) shown in panel
+    barcode_preview: Optional[np.ndarray]             = None  
     done:           bool                             = False
-    aborted:        bool                             = False  # operator removed the product
+    aborted:        bool                             = False  
     t_start:        float                            = field(default_factory=time.perf_counter)
-    # Final classification — set by app.py after the gather loop completes.
-    final_label:    Optional[str]                    = None   # "ok" / "defective"
-    defect_type:    Optional[str]                    = None   # "absent" / "blurry" / "expired" / None
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# AI DIAGNOSTICS DISPLAY
-# ═══════════════════════════════════════════════════════════════════════════════
-
-_COLOR_VALID   = (96, 220, 120)   # mint green
-_COLOR_DEFECT  = (76, 76, 235)    # crimson
-_COLOR_WARNING = (60, 180, 240)   # amber
-_COLOR_FLAVOR  = (255, 200, 80)   # cyan-amber
-_COLOR_BARCODE = (255, 200, 0)    # gold
+    final_label:    Optional[str]                    = None  
+    defect_type:    Optional[str]                    = None
+_COLOR_VALID   = (96, 220, 120)  
+_COLOR_DEFECT  = (76, 76, 235)   
+_COLOR_WARNING = (60, 180, 240)  
+_COLOR_FLAVOR  = (255, 200, 80)   
+_COLOR_BARCODE = (255, 200, 0)    
 _PANEL_W       = 340
 _PANEL_BG      = (15, 20, 30)
 
@@ -769,14 +610,10 @@ _PANEL_BG      = (15, 20, 30)
 def _draw_corner_bbox(img: np.ndarray, x1: int, y1: int, x2: int, y2: int,
                       color: Tuple[int,int,int], thickness: int = 2,
                       arm_ratio: float = 0.18) -> None:
-    """Industrial-style bbox: only the four corners drawn, with thin guide lines.
-    Looks much cleaner than a full rectangle."""
     arm = max(8, int(min(x2 - x1, y2 - y1) * arm_ratio))
-    # Faint full rectangle (1px) for context
     overlay = img.copy()
     cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 1, cv2.LINE_AA)
     cv2.addWeighted(overlay, 0.35, img, 0.65, 0, dst=img)
-    # Solid corner brackets
     for (cx, cy, dx, dy) in [
         (x1, y1, +1, +1), (x2, y1, -1, +1),
         (x1, y2, +1, -1), (x2, y2, -1, -1),
@@ -788,7 +625,6 @@ def _draw_corner_bbox(img: np.ndarray, x1: int, y1: int, x2: int, y2: int,
 def _draw_label_pill(img: np.ndarray, text: str, x: int, y: int,
                      color: Tuple[int,int,int],
                      scale: float = 0.5, pad: int = 6) -> None:
-    """Translucent rounded label box with text on top. Anchored bottom-left at (x, y)."""
     if not text:
         return
     (tw, th), bl = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, 1)
@@ -801,15 +637,6 @@ def _draw_label_pill(img: np.ndarray, text: str, x: int, y: int,
     cv2.rectangle(img, (x1, y1), (x2, y2), color, 1, cv2.LINE_AA)
     cv2.putText(img, text, (x + pad, y - 2),
                 cv2.FONT_HERSHEY_SIMPLEX, scale, color, 1, cv2.LINE_AA)
-
-
-# [BARCODE DISABLED] — _draw_barcode_pip stub (original body kept as a docstring)
-def _draw_barcode_pip_DISABLED(main, bc_frame, bc_bbox, bc_text):
-    """Disabled. Drew a small DroidCam PIP in the top-right corner of the main
-    frame with the barcode bbox + decoded caption. See git history to restore.
-    """
-    return None
-
 
 def _conf_color(conf: float) -> Tuple[int, int, int]:
     if conf >= 0.70: return (0, 210, 80)
@@ -836,15 +663,11 @@ def build_display(
     state: str, presence_frac: float, fps: float,
     scan_attempts: int = 0,
 ) -> np.ndarray:
-    # Local import of MAX_SCAN_ATTEMPTS / PRESENCE_SETTLE_SECS for state labels
     from config import MAX_SCAN_ATTEMPTS, PRESENCE_SETTLE_SECS
 
     main = base_frame.copy()
     h, w = main.shape[:2];  pad = 7
 
-    # Bbox overlays are only meaningful during active analysis (PROCESSING).
-    # In RESULT/WAITING_REMOVAL the product has often already moved, so the
-    # frozen coordinates would appear at the wrong position on the frame.
     if state == "PROCESSING":
         if result.flavor_bbox and result.flavor_text:
             x1, y1, x2, y2 = result.flavor_bbox
@@ -897,7 +720,6 @@ def build_display(
         cv2.putText(main, ex, (10,88),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.65, _COLOR_VALID,  2, cv2.LINE_AA)
 
-    # ── Right diagnostics panel ────────────────────────────────────────────────
     panel = np.full((h, _PANEL_W, 3), _PANEL_BG, dtype=np.uint8)
     cv2.putText(panel, "AI DIAGNOSTICS", (pad,22),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0,210,210), 1, cv2.LINE_AA)
@@ -906,7 +728,6 @@ def build_display(
     cv2.putText(panel, f"STATE: {state}", (pad,40),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.40, (160,160,160), 1, cv2.LINE_AA)
     py = 56
-    # Final classification banner (only set once gather completes)
     if result.final_label is not None:
         is_ok = result.final_label == "ok"
         verdict_color = _COLOR_VALID if is_ok else _COLOR_DEFECT
@@ -918,7 +739,6 @@ def build_display(
             cv2.putText(panel, f"DEFECT: {result.defect_type.upper()}", (pad, py),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.40, _COLOR_DEFECT, 1, cv2.LINE_AA)
             py += 16
-    # Show scan attempt counter on panel
     if scan_attempts > 0:
         attempt_color = _COLOR_WARNING if scan_attempts < MAX_SCAN_ATTEMPTS else _COLOR_DEFECT
         cv2.putText(panel, f"SCAN ATTEMPT: {scan_attempts}/{MAX_SCAN_ATTEMPTS}",
@@ -939,11 +759,6 @@ def build_display(
     cv2.putText(panel, "BARCODE", (pad,py),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.44, _COLOR_BARCODE, 1, cv2.LINE_AA)
     py += 15
-    # Prefer whatever this gather attempt decoded on the gripper-cam, then
-    # fall back to the pre-scan barcode captured from the phone camera before
-    # the cup reached the conveyor. That fallback is what the operator
-    # actually associated with this cup, so showing it on the AI stream
-    # avoids the misleading "not detected" line.
     prescan_text, prescan_type = get_prescan_barcode()
     if result.barcode_text and result.barcode_type:
         bc_disp  = f"{result.barcode_type}: {result.barcode_text}"
@@ -965,17 +780,10 @@ def build_display(
                 bc_color, 1, cv2.LINE_AA)
     py += 14
 
-    # Barcode crop thumbnail removed — the decoded number above is the
-    # operator-relevant signal. The DroidCam side stream still shows the
-    # live YOLO bbox for debugging if needed.
-
     cv2.line(panel, (pad,py+2), (_PANEL_W-pad,py+2), (38,38,52), 1);  py += 10
 
     if not result.expiry_outputs:
         if result.defect_type:
-            # After final classification — show the defect_type instead of the
-            # generic "no detections" message so the operator immediately sees
-            # WHY the cup was rejected.
             cv2.putText(panel, f"DEFECT TYPE: {result.defect_type.upper()}",
                         (pad, py+18), cv2.FONT_HERSHEY_SIMPLEX, 0.44, _COLOR_DEFECT, 1, cv2.LINE_AA)
         else:

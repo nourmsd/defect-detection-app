@@ -1,9 +1,3 @@
-/* ═══════════════════════════════════════════════════════════════
-   Smart Quality Control — Worker HMI
-   Sidebar layout: sidebar + main-area (topbar + content)
-   Content: kpi-row + main-grid (left-col camera|history+insp + right-col robot+logs)
-═══════════════════════════════════════════════════════════════ */
-
 :host {
   --bg-root:       #080c12;
   --bg-sidebar:    #0a0e18;
@@ -29,8 +23,6 @@
   --card-shadow:   0 2px 8px rgba(0,0,0,0.5);
   --sidebar-width: 200px;
 }
-
-/* Light mode overrides */
 .light-mode {
   --bg-root:       #edf1f7;
   --bg-sidebar:    #ffffff;
@@ -51,11 +43,6 @@
   --red:           #dc2626;
   --red-dim:       rgba(220,38,38,0.10);
 }
-
-/* ══════════════════════════════════════════════════════
-   ROOT SHELL
-══════════════════════════════════════════════════════ */
-
 .worker-shell {
   height: 100vh;
   overflow: hidden;
@@ -65,11 +52,6 @@
   display: flex;
   flex-direction: row;
 }
-
-/* ══════════════════════════════════════════════════════
-   SIDEBAR
-══════════════════════════════════════════════════════ */
-
 .sidebar {
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
@@ -86,8 +68,6 @@
   width: 52px;
   min-width: 52px;
 }
-
-/* Brand */
 .sidebar-brand {
   display: flex;
   align-items: center;
@@ -114,8 +94,6 @@
   display: block; font-size: 8px; letter-spacing: .12em;
   color: var(--text-muted); text-transform: uppercase; white-space: nowrap;
 }
-
-/* Sections */
 .sidebar-section {
   padding: 10px 10px 8px;
   border-bottom: 1px solid var(--border);
@@ -127,8 +105,6 @@
   color: var(--text-muted); text-transform: uppercase;
   margin-bottom: 7px;
 }
-
-/* System status items */
 .sys-item {
   display: flex; align-items: center; gap: 7px;
   padding: 5px 2px;
@@ -152,8 +128,6 @@
   font-family: var(--font-data); white-space: nowrap; flex-shrink: 0;
 }
 .tag-on { color: var(--green); border-color: rgba(34,197,94,.3); background: var(--green-dim); }
-
-/* AI status badge */
 .ai-status-badge {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 8px; border-radius: var(--radius);
@@ -168,8 +142,6 @@
 .inf-ok      { background: var(--green-dim);  color: var(--green);  border-color: rgba(34,197,94,.3); }
 .inf-nok     { background: var(--red-dim);    color: var(--red);    border-color: rgba(239,68,68,.3); }
 .inf-idle    { background: transparent; color: var(--text-muted); }
-
-/* AI stats rows */
 .ai-stats { display: flex; flex-direction: column; gap: 3px; }
 .ai-stat-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
 .ai-stat-lbl {
@@ -180,8 +152,6 @@
   font-size: 10px; font-weight: 700;
   font-family: var(--font-data); color: var(--text-primary);
 }
-
-/* Sidebar footer */
 .sidebar-footer {
   margin-top: auto;
   padding: 10px;
@@ -198,11 +168,6 @@
 }
 .logout-btn mat-icon { font-size: 16px; width: 16px; height: 16px; flex-shrink: 0; }
 .logout-btn:hover { color: var(--red); border-color: var(--red); background: var(--red-dim); }
-
-/* ══════════════════════════════════════════════════════
-   MAIN AREA
-══════════════════════════════════════════════════════ */
-
 .main-area {
   flex: 1;
   display: flex;
@@ -211,8 +176,6 @@
   overflow-y: auto;
   overflow-x: hidden;
 }
-
-/* ── Topbar ─────────────────────────────────────────── */
 .topbar {
   display: flex;
   align-items: center;
@@ -279,8 +242,6 @@
 }
 .icon-btn mat-icon { font-size: 16px; width: 16px; height: 16px; }
 .icon-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
-
-/* ── Alarm overlay ─────────────────────────────────── */
 .alarm-overlay {
   position: relative; z-index: 500;
   display: flex; flex-direction: column; gap: 2px;
@@ -303,10 +264,6 @@
 .banner-dismiss { background: none; border: none; border-radius: var(--radius); color: var(--text-muted); width: 20px; height: 20px; padding: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .banner-dismiss mat-icon { font-size: 13px; width: 13px; height: 13px; }
 
-/* ══════════════════════════════════════════════════════
-   CONTENT AREA
-══════════════════════════════════════════════════════ */
-
 .content-area {
   flex: 1;
   display: flex;
@@ -314,16 +271,9 @@
   gap: 8px;
   padding: 8px 10px;
   min-height: 0;
-  /* Single scroll container for the worker page. Camera split + inspection
-     card + history can grow taller than the viewport; the scrollbar appears
-     here so the inspection card stays reachable. */
   overflow-y: auto;
   overflow-x: hidden;
 }
-
-/* ══════════════════════════════════════════════════════
-   KPI ROW
-══════════════════════════════════════════════════════ */
 
 .kpi-row {
   display: flex;
@@ -359,8 +309,6 @@
   font-size: 9px; line-height: 1;
   color: var(--text-muted); margin-top: 1px;
 }
-
-/* 4th card: mini donut row */
 .donut-row {
   display: flex; align-items: center; gap: 12px;
 }
@@ -404,22 +352,14 @@
   color: var(--text-muted); text-transform: uppercase; text-align: center;
 }
 
-/* ══════════════════════════════════════════════════════
-   MAIN GRID
-══════════════════════════════════════════════════════ */
-
 .main-grid {
   display: flex;
   flex-direction: row;
   gap: 8px;
   min-height: 0;
-  /* Don't clip — let .main-area be the single scroll container so the
-     inspection card / history below the camera split is reachable. */
   overflow: visible;
   flex-shrink: 0;
 }
-
-/* ── Left column ─────────────────────────────────── */
 .left-col {
   display: flex;
   flex-direction: column;
@@ -454,8 +394,6 @@
   display: flex;
   flex-direction: column;
 }
-
-/* ── Right column ────────────────────────────────── */
 .right-col {
   flex: 1;
   display: flex;
@@ -480,10 +418,6 @@
   overflow-y: auto;
 }
 
-/* ══════════════════════════════════════════════════════
-   SHARED PANEL
-══════════════════════════════════════════════════════ */
-
 .panel {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -499,9 +433,6 @@
   margin-bottom: 7px; display: flex; align-items: center; gap: 6px;
 }
 .panel-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-
-/* Sidebar LIVE AI PIPELINE — barcode row. Wider value than other stats
-   because barcodes can be 8–13 digits. */
 .ai-stat-bc {
   font-size: 10px;
   letter-spacing: .02em;
@@ -510,10 +441,6 @@
   white-space: nowrap;
   flex: 1;
 }
-
-/* Decoded-barcode chip pinned to the top-right of the AI DIAGNOSIS camera
-   box. Green = confirmed by AI inspection; amber pulsing = pending pre-scan
-   captured by the phone camera but not yet consumed by the AI cycle. */
 .cam-bc-tag {
   position: absolute;
   top: 8px;
@@ -545,9 +472,6 @@
   background: rgba(245, 158, 11, .9);
   animation: pending-pulse 1.6s ease-in-out infinite;
 }
-
-/* Decoded-barcode chip on the BARCODE CAM panel — green = confirmed by AI,
-   amber pulsing = pending pre-scan, still waiting for the inspection cycle. */
 .bc-decoded-badge {
   position: absolute;
   bottom: 6px;
@@ -602,10 +526,6 @@
   0%,100% { opacity: 1; }
   50%     { opacity: .55; }
 }
-
-/* ══════════════════════════════════════════════════════
-   CAMERA PANEL
-══════════════════════════════════════════════════════ */
 
 .camera-panel {
   display: flex !important;
@@ -706,10 +626,6 @@
 .meta-lbl { font-size: 7px; font-weight: 700; letter-spacing: .09em; color: var(--text-muted); }
 .meta-val { font-size: 10px; font-weight: 700; font-family: var(--font-data); color: var(--text-primary); }
 
-/* ══════════════════════════════════════════════════════
-   DETECTION HISTORY
-══════════════════════════════════════════════════════ */
-
 .history-panel { flex-shrink: 0; }
 
 .hist-dots {
@@ -752,10 +668,6 @@
   border-radius: 8px; font-size: 8px; font-weight: 700;
   padding: 1px 6px; font-family: var(--font-data);
 }
-
-/* ══════════════════════════════════════════════════════
-   CURRENT INSPECTION PANEL
-══════════════════════════════════════════════════════ */
 
 .insp-grid {
   display: flex; flex-direction: column;
@@ -814,8 +726,6 @@
   font-size: 11px; font-weight: 700; letter-spacing: .08em;
   color: var(--text-muted); text-transform: uppercase; text-align: left;
 }
-
-/* Semicircle confidence gauge */
 .insp-gauge-wrap {
   position: relative; width: 72px; height: 44px; flex-shrink: 0;
 }
@@ -834,10 +744,6 @@
   font-size: 11px !important; font-weight: 800; font-family: var(--font-data);
   color: var(--text-primary); line-height: 1; white-space: nowrap;
 }
-
-/* ══════════════════════════════════════════════════════
-   ROBOT CONTROLS
-══════════════════════════════════════════════════════ */
 
 .robot-panel { flex-shrink: 0; display: flex; flex-direction: column; gap: 7px; }
 
@@ -866,8 +772,6 @@
   font-size: 9px !important; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; flex: 1;
 }
-
-/* Emergency stop */
 .estop-btn {
   display: flex; align-items: center; justify-content: center;
   gap: 8px; width: 100%; padding: 10px 14px;
@@ -883,8 +787,6 @@
 .estop-btn.estop-firing { opacity: .65; animation: estop-pulse .5s ease-in-out infinite; }
 @keyframes estop-pulse { 0%,100%{opacity:.65} 50%{opacity:.9} }
 .estop-icon { font-size: 13px; line-height: 1; }
-
-/* Action buttons */
 .robot-actions { display: flex; flex-direction: column; gap: 5px; }
 
 .robot-action-btn {
@@ -901,7 +803,6 @@
 .btn-motors:not(:disabled):hover    { border-color: var(--amber);  background: var(--amber-dim);  color: var(--amber); }
 .btn-calibrate:not(:disabled):hover { border-color: var(--green);  background: var(--green-dim);  color: var(--green); }
 
-/* Action feedback */
 .action-fb {
   display: flex; align-items: center; gap: 5px;
   padding: 5px 9px; border-radius: var(--radius);
@@ -911,7 +812,6 @@
 .fb-ok  { background: var(--green-dim); color: var(--green); border: 1px solid rgba(34,197,94,.3); }
 .fb-err { background: var(--red-dim);   color: var(--red);   border: 1px solid rgba(239,68,68,.3); }
 
-/* Reset session */
 .reset-btn {
   display: flex; align-items: center; justify-content: center;
   gap: 6px; width: 100%; padding: 11px 14px;
@@ -923,10 +823,6 @@
 }
 .reset-btn mat-icon { font-size: 14px; width: 14px; height: 14px; }
 .reset-btn:hover { border-color: var(--red); background: var(--red-dim); color: var(--red); }
-
-/* ══════════════════════════════════════════════════════
-   ERROR LOGS SECTION
-══════════════════════════════════════════════════════ */
 
 .error-section {
   border-radius: var(--radius);
@@ -1064,10 +960,6 @@
 .err-error    { border-left: 3px solid #f97316; }
 .err-warning  { border-left: 3px solid var(--amber); }
 
-/* ══════════════════════════════════════════════════════
-   DANGER BANNER
-══════════════════════════════════════════════════════ */
-
 .danger-banner {
   position: fixed; bottom: 0; left: 0; right: 0;
   display: flex; align-items: center; gap: 14px;
@@ -1098,10 +990,6 @@
 .danger-banner--info   .danger-dismiss { border: 1px solid rgba(147,197,253,.4); color: #93c5fd; }
 .danger-dismiss:hover { background: rgba(255,255,255,.08); color: #fff; }
 
-/* ══════════════════════════════════════════════════════
-   COLOUR UTILITIES
-══════════════════════════════════════════════════════ */
-
 .val-green { color: var(--green)  !important; }
 .val-red   { color: var(--red)    !important; }
 .val-amber { color: var(--amber)  !important; }
@@ -1112,10 +1000,6 @@
 .spin-icon { animation: spinAnim 1s linear infinite; }
 @keyframes spinAnim { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 
-/* ══════════════════════════════════════════════════════
-   LIGHT MODE OVERRIDES
-══════════════════════════════════════════════════════ */
-
 .light-mode .cam-placeholder { background: #e2eaf5; color: #4a5568; }
 .light-mode .cam-placeholder mat-icon { color: #94a3b8; }
 .light-mode .mini-donut-track { stroke: #d0dae8; }
@@ -1123,24 +1007,12 @@
 .light-mode .dot.dot-empty    { background: #d0dae8; }
 .light-mode .insp-gauge-num   { color: var(--text-primary); }
 .light-mode .mini-donut-center { color: var(--text-primary); }
-
-/* ══════════════════════════════════════════════════════
-   RESPONSIVE — tablet & mobile breakpoints
-   Goal: every dashboard element stays reachable on a
-   phone in portrait without horizontal scroll, no CSS
-   variable on which a desktop styling decision depends
-   should be hard-coded in pixels.
-══════════════════════════════════════════════════════ */
-
-/* Large tablet / small laptop: stack main grid vertically. */
 @media (max-width: 1100px) {
   .main-grid { flex-direction: column; }
   .right-col { max-width: none; min-width: 0; }
   .right-col .error-section { overflow: visible; }
   .camera-box { height: 44vh; min-height: 280px; }
 }
-
-/* Tablet portrait. */
 @media (max-width: 900px) {
   :host { --sidebar-width: 160px; }
   .kpi-row { flex-wrap: wrap; }
@@ -1154,8 +1026,6 @@
   .topbar-status .pill { display: none; }
   .topbar-status .pill:first-child { display: flex; }
 }
-
-/* Phone portrait — collapse sidebar to icon strip, single-column everything. */
 @media (max-width: 640px) {
   .sidebar {
     width: 52px;
@@ -1204,8 +1074,6 @@
   .estop-btn { padding: 9px 12px; font-size: 11px; }
 
   .err-body { max-height: 260px; }
-
-  /* Toasts: full-width band on phones so message text doesn't wrap awkwardly. */
   app-toast-container .toast-stack {
     left: 8px !important;
     right: 8px !important;
@@ -1217,8 +1085,6 @@
   .danger-text strong { font-size: 11px; }
   .danger-text span   { font-size: 11px; }
 }
-
-/* Very small phones — collapse to single KPI per row already; tighten chrome. */
 @media (max-width: 380px) {
   .topbar-title { display: none; }
   .stat-value { font-size: 24px; }

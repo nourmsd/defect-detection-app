@@ -1,9 +1,3 @@
-"""
-Robot module: Niryo connection management, motion primitives, pick-and-place,
-worker thread, backend/event-bus helpers, and the Flask HTTP API on :5002.
-All shared mutable robot globals live here at module scope.
-"""
-
 import json
 import queue as queue_module
 import threading
@@ -29,33 +23,11 @@ from config import (
     _plc_client, _SNAP7_AVAILABLE, plc_heartbeat,
 )
 import os
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SHARED FLASK APPLICATION (Robot HTTP API)
-# ═══════════════════════════════════════════════════════════════════════════════
-
 robot_app = Flask("robot_service")
 CORS(robot_app)
-
-# Stream Flask: replaces the standalone niryo_stream.py process. Runs on :5001
-# and serves the Niryo robot's camera feed using the SAME pyniryo connection
-# we hold for motion. One process = one TCP slot on robot port 40001 — no more
-# "second connection hangs forever" race.
 stream_app = Flask("stream_service")
 CORS(stream_app)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ROBOT STATE
-# ═══════════════════════════════════════════════════════════════════════════════
-
 _state_lock           = threading.Lock()
-# Pyniryo's TCP socket is NOT thread-safe. Every call to a `_robot.foo()`
-# method must be wrapped in `with _pyniryo_lock:` so the camera/motion/status
-# threads don't interleave reads and produce the "utf-8 codec can't decode
-# byte 0xff" desync. Reentrant so we can grab it from helpers that may already
-# hold it without deadlocking.
 _pyniryo_lock         = threading.RLock()
 _robot                = None
 _robot_ok             = False
@@ -63,26 +35,14 @@ _last_action          = "idle"
 _action_queue         = queue_module.Queue(maxsize=20)
 _recovery_in_progress = False
 _robot_session_mode   = "standby"
-
-# Reference expiry cutoff supplied by the web app via POST /reference-date.
-# A detected expiry date strictly earlier than this cutoff → defect_type="expired".
 _reference_date_lock: threading.Lock      = threading.Lock()
 _reference_date:      Optional[str]       = os.environ.get("REFERENCE_DATE") or None
-
-# Camera grabber state — lives in robot.py because only the NiryoRobot can fetch
-# frames. AI consumers read these via qualified access (robot._camera_frame_bgr).
 _camera_lock         = threading.Lock()
-_camera_jpeg_bytes:  Optional[bytes]      = None   # latest JPEG from get_img_compressed()
-_camera_frame_bgr:   Optional[np.ndarray] = None   # decoded BGR for AI pipelines
+_camera_jpeg_bytes:  Optional[bytes]      = None   
+_camera_frame_bgr:   Optional[np.ndarray] = None   
 _camera_frame_count: int                  = 0
 _camera_paused                            = False
-STREAM_SERVICE_PORT  = 5001                        # matches dashboard's hard-coded URL
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ROBOT UTILITY HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
-
+STREAM_SERVICE_PORT  = 5001 
 def _call_first_available(target, method_names, *args, **kwargs):
     for name in method_names:
         fn = getattr(target, name, None)
@@ -148,10 +108,6 @@ def _collect_robot_diagnostics() -> Tuple[bool, dict, list]:
         robot, robot_ok, session_mode = _robot, _robot_ok, _robot_session_mode
 
     if not robot_ok or robot is None:
-        # Don't emit a "robot_not_ready" alert — the dashboard's connectivity
-        # indicator already covers this state. Alerts list stays empty so the
-        # operator only sees actionable issues (temperature, calibration,
-        # motors, collision, emergency stop).
         return need_calib, hardware_status, alerts
 
     try:
@@ -180,12 +136,6 @@ def _collect_robot_diagnostics() -> Tuple[bool, dict, list]:
                            "message": f"{key}: {hardware_status[key]}"})
 
     return need_calib, hardware_status, alerts
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ROBOT CONNECTION MANAGEMENT
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def connect_robot() -> None:
     global _robot, _robot_ok, _robot_session_mode
     with _state_lock:
@@ -195,10 +145,7 @@ def connect_robot() -> None:
         from pyniryo import NiryoRobot
         log.info(f"Connecting to Niryo robot at {ROBOT_IP} …")
         robot = NiryoRobot(ROBOT_IP)
-        log.info("Robot TCP connected ✔")
-
-        # Verified-working boot sequence: calibrate → update_tool → INSPECTION_POSE.
-        # Plain pyniryo top-level methods, no learning-mode toggle, no need_calibration check.
+        log.info("Robot TCP connected successful")
         log.info("Calibrating …")
         with _pyniryo_lock:
             robot.calibrate_auto()
@@ -212,9 +159,7 @@ def connect_robot() -> None:
         log.info("Moving to INSPECTION_POSE …")
         with _pyniryo_lock:
             robot.move_pose(INSPECTION_POSE)
-        log.info("✅ Robot fully ready at INSPECTION_POSE")
-        # Start the in-process camera grabber so the AI pipeline and the :5001
-        # /stream endpoint can both consume frames from this single connection.
+        log.info(" Robot fully ready at INSPECTION_POSE")
         start_camera_thread()
 
     except Exception as exc:
@@ -240,26 +185,10 @@ def release_robot_connection(reason: str = "standby") -> None:
 
 
 def reconnect_robot_socket(reason: str = "camera desync") -> bool:
-    """Lightweight socket-only reconnect. Closes the existing NiryoRobot TCP
-    connection and opens a fresh one WITHOUT calibrating or moving the arm —
-    used to recover from pyniryo byte-stream desync (the 'utf-8 codec can't
-    decode byte 0xff' error after long sessions). The robot is left wherever
-    it currently is. Returns True on success.
-
-    IMPORTANT: We keep `_robot_ok = True` throughout a successful reconnect.
-    The /robot-health endpoint reads `_robot_ok`, and Node polls it every few
-    seconds; if it sees False mid-reconnect (even for 200 ms) it concludes
-    "Robot disconnected" and suspends the AI pipeline. Only flip _robot_ok
-    to False if the rebuild ACTUALLY fails — at that point the robot really
-    is gone and Node should know.
-    """
     global _robot, _robot_ok
     log.warning(f"[reconnect] Rebuilding robot TCP socket — {reason}")
     with _state_lock:
         old = _robot
-        # Null _robot so any motion thread that grabs it during the rebuild
-        # sees None and waits, but keep _robot_ok=True so /robot-health stays
-        # green and Node does not panic-suspend the pipeline.
         _robot = None
     if old is not None:
         try:
@@ -292,7 +221,6 @@ def ensure_robot_ready() -> bool:
                     f"_recovery_in_progress={_recovery_in_progress}")
 
         if _recovery_in_progress:
-            # Wait for ongoing recovery
             deadline = time.time() + 40
             while time.time() < deadline:
                 with _state_lock:
@@ -305,8 +233,8 @@ def ensure_robot_ready() -> bool:
 
     try:
         log.warning("Robot not ready — attempting automatic recovery …")
-        connect_robot()                    # This already does calibration + move to READING
-        time.sleep(2.5)                    # Give robot time to stabilize
+        connect_robot()                    
+        time.sleep(2.5)                    
         log.info("Robot recovery completed")
         return True
     except Exception as exc:
@@ -315,11 +243,6 @@ def ensure_robot_ready() -> bool:
     finally:
         with _state_lock:
             _recovery_in_progress = False
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ROBOT MOTION PRIMITIVES
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def safe_move(pose, label: str = "?") -> None:
     """Cartesian move using PoseObject + robot.move_pose (the verified-working API)."""
@@ -368,18 +291,16 @@ def open_gripper() -> None:
 
 
 def recalibrate_gripper() -> bool:
-    """Resets the tool connection to fix stalling/partial opening.
-    Verified-working sequence: update_tool → 1s settle → open_gripper(speed=500)."""
     if _robot is None:
         log.warning("[gripper] Cannot recalibrate — robot not connected.")
         return False
     log.warning("[gripper] Resetting gripper connection …")
     try:
         with _pyniryo_lock:
-            _robot.update_tool()                # force-refresh tool recognition
+            _robot.update_tool()                
         time.sleep(1.0)
         with _pyniryo_lock:
-            _robot.open_gripper(speed=500)      # full open to a known state
+            _robot.open_gripper(speed=500)      
         log.info("[gripper] Gripper recalibrated.")
         return True
     except Exception as exc:
@@ -387,13 +308,10 @@ def recalibrate_gripper() -> bool:
         return False
 
 
-_GRIPPER_TIMEOUT_S = 5.0   # max time to wait for a gripper call before declaring stall
+_GRIPPER_TIMEOUT_S = 5.0   
 
 
 def _call_with_timeout(fn, timeout_s: float, label: str):
-    """Run fn() in a daemon thread; raise TimeoutError if it doesn't return
-    within timeout_s. The thread keeps running (we can't kill a stuck pyniryo
-    socket cleanly) but the worker is no longer blocked."""
     holder: dict = {"exc": None, "done": False}
     def _target():
         try:
@@ -411,17 +329,12 @@ def _call_with_timeout(fn, timeout_s: float, label: str):
 
 
 def _gripper_safe(action_fn, label: str) -> None:
-    """Run a gripper action with a 5s watchdog. On stall/timeout/error, reboot
-    the tool once and retry. If recovery also stalls, raise so the worker can
-    log it and move on instead of blocking forever."""
     try:
         _call_with_timeout(action_fn, _GRIPPER_TIMEOUT_S, label)
         return
     except Exception as exc:
         log.warning(f"[gripper] {label} failed ({exc}) — attempting recalibration.")
     try:
-        # recalibrate_gripper itself is wrapped in a timeout — its update_tool
-        # call is the most common stall source.
         _call_with_timeout(recalibrate_gripper, _GRIPPER_TIMEOUT_S, "recalibrate")
     except Exception as exc:
         log.error(f"[gripper] Recalibration timed out: {exc}")
@@ -433,29 +346,6 @@ def _gripper_safe(action_fn, label: str) -> None:
     except Exception as exc:
         log.error(f"[gripper] {label} still failed after recalibration: {exc}")
         raise
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PICK & PLACE — Cartesian poses (verified-working pyniryo flow)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Defective-product pick-and-place script, translated 1:1 from the
-# Niryo Studio Blockly file `yog1.xml`. Sent to the robot inline via
-# /niryo_robot_programs_manager/execute_program with execute_from_string=True
-# and language=PYTHON3. The saved Blockly program on the robot is no longer
-# referenced — Blockly (=66) is "Not Runnable" per the open-source
-# ProgramLanguage.msg, and the firmware translates it client-side in
-# Niryo Studio rather than on-device.
-#
-# Block → Python mapping used:
-#   niryo_one_move_pose_from_pose  → n.move_pose(x, y, z, roll, pitch, yaw)
-#   niryo_ned2_open_gripper        → n.open_gripper(speed=500,
-#                                         max_torque_percentage=OPEN_TORQUE,
-#                                         hold_torque_percentage=OPEN_HOLD_TORQUE)
-#   niryo_ned2_close_gripper       → n.close_gripper(speed=500,
-#                                         max_torque_percentage=CLOSE_TORQUE,
-#                                         hold_torque_percentage=CLOSE_HOLD_TORQUE)
-#   niryo_one_sleep                → n.wait(seconds)
 DEFECTIVE_PROGRAM_PY = (
     "# -*- coding: utf-8 -*-\n"
     "# qc defective-product pick-and-place. Python 2 compatible (PEP-263).\n"
@@ -509,13 +399,6 @@ _resolved_program_language: Optional[int] = None
 
 
 def _discover_program_languages() -> dict:
-    """Ask the robot what language enum values its programs_manager actually
-    knows. We call /niryo_robot_programs_manager/get_program_list — the
-    response includes each saved program's language number, which tells us
-    what numbers the firmware accepts for `language.used`.
-
-    Returns a dict of {language_int: example_program_name} found on the
-    robot. Logged once for diagnosis."""
     try:
         import roslibpy
     except ImportError:
@@ -523,9 +406,6 @@ def _discover_program_languages() -> dict:
     client = _get_ros_client()
     if client is None:
         return {}
-    # GetProgramList typically returns {programs_names: [...], programs_descriptions: [...],
-    # programs_languages: [int, ...]} — exact field names vary, so we
-    # introspect whatever comes back.
     found: dict = {}
     for service_name in (
         "/niryo_robot_programs_manager/get_program_list",
@@ -566,13 +446,6 @@ def _discover_program_languages() -> dict:
 
 
 def _language_probe_order() -> List[int]:
-    """Order in which to try `language.used` enum values when calling
-    /niryo_robot_programs_manager/execute_program. Upstream master has
-    PYTHON3=2 and PYTHON2=1, but older Niryo-One firmware can have
-    different numbering and is often Python-2-only. We try:
-      1. Whatever was last accepted (cached).
-      2. The configured value.
-      3. The remaining common candidates."""
     seen: set = set()
     order: List[int] = []
 
@@ -583,12 +456,8 @@ def _language_probe_order() -> List[int]:
 
     _add(_resolved_program_language)
     _add(ROBOT_DEFECTIVE_PROGRAM_LANGUAGE)
-    for v in (2, 1, 3, 0):  # PYTHON3, PYTHON2, sometimes-PYTHON3-on-older, ALL
+    for v in (2, 1, 3, 0):  
         _add(v)
-    # Last-resort: ask the robot what enum IDs it actually uses for saved
-    # programs. If yog1 is stored as Blockly with ID 66, that confirms the
-    # upstream enum is in effect; if it shows up as some other number we
-    # learn the firmware's local numbering and can extrapolate.
     try:
         discovered = _discover_program_languages()
     except Exception as exc:
@@ -607,38 +476,14 @@ def _remember_program_language(value: int) -> None:
 
 
 def execute_pick_and_place(item_id: str, confidence: float) -> None:
-    """Defective-product pick-and-place. Sends the inline Python translation
-    of the Niryo Studio yog1.xml Blockly program to the robot via:
-
-        /niryo_robot_programs_manager/execute_program
-        type:  niryo_robot_programs_manager/ExecuteProgram
-        args:  {name="", code_string=<DEFECTIVE_PROGRAM_PY>,
-                execute_from_string=True, language={data: PYTHON3}}
-
-    Why inline rather than the saved 'yog1' program: the robot stores Blockly
-    XML but cannot execute it directly (ProgramLanguage.BLOCKLY=66 is marked
-    "Not Runnable" in the open-source .msg). Niryo Studio translates Blockly
-    to Python in the BROWSER before calling this same service. We do the
-    equivalent translation once, at the top of this file, so the Python is
-    self-contained and the user doesn't need to re-save anything.
-
-    Camera grabber paused for the duration so pyniryo's TCP socket doesn't
-    try to read frames while the on-robot program runner is driving the
-    arm via ROS — the two would race for the camera channel."""
     global _camera_paused
     log.info(f"━━━ START PICK & PLACE | Item={item_id} | inline-python (yog1 translation) ━━━")
 
     prev_paused = _camera_paused
     _camera_paused = True
-    time.sleep(0.25)  # let the camera loop drain any in-flight read
+    time.sleep(0.25)  
 
     try:
-        # The ProgramLanguage enum values vary by firmware vintage.
-        # Upstream master uses PYTHON3=2, but older Niryo-One-era firmware
-        # was Python2-only and uses different numbering. Probe candidates
-        # in likely-success order until one is accepted. Once we find a
-        # working value, _resolved_program_language caches it so we don't
-        # probe again next time.
         candidates = _language_probe_order()
         ok, msg = False, ""
         for lang in candidates:
@@ -651,16 +496,11 @@ def execute_pick_and_place(item_id: str, confidence: float) -> None:
                     "code_string": DEFECTIVE_PROGRAM_PY,
                     "language": {"used": lang},
                 },
-                # Generous timeout — the script does 9 moves plus two 5 s
-                # waits. Niryo Studio runs it in ~25 s; we allow 60 s.
                 timeout=60.0,
             )
             if "Unknown Language" in msg:
                 log.info(f"[pick-place] language={lang} not accepted; trying next")
                 continue
-            # Either real success or a different failure mode — stop
-            # probing; the caller's error path will handle non-language
-            # failures.
             _remember_program_language(lang)
             break
     finally:
@@ -672,11 +512,6 @@ def execute_pick_and_place(item_id: str, confidence: float) -> None:
         return
 
     log.info(f"[pick-place] ROS execute_program → {msg}")
-
-    # Belt-and-braces: ensure the arm is parked at INSPECTION_POSE for the
-    # next cycle. The saved program already ends there, so this is usually
-    # a no-op fast-path, but pyniryo also re-syncs its internal pose cache
-    # which prevents stale state on the next pick.
     try:
         safe_move(INSPECTION_POSE, label="INSPECTION_POSE (post-program)")
     except Exception as exc:
@@ -684,10 +519,6 @@ def execute_pick_and_place(item_id: str, confidence: float) -> None:
 
     _notify_backend_action(item_id, action="completed")
     log.info(f"━━━ PICK & PLACE DONE for {item_id} ━━━")
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# WORKER THREAD
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def worker_loop() -> None:
     log.info("Worker thread started — waiting for inspection results …")
@@ -704,24 +535,6 @@ def worker_loop() -> None:
         except Exception as exc:
             log.error(f"Worker loop error: {exc}")
             time.sleep(1.0)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ROSBRIDGE BRIDGE — for ROS services the pyniryo TCP API doesn't expose
-# ═══════════════════════════════════════════════════════════════════════════════
-# Niryo Studio invokes some firmware actions (notably motor reboot) over ROS
-# rather than the TCP API. The Niryo Ned 2 runs rosbridge_websocket on port
-# 9090 by default; we use roslibpy to call those services on demand.
-#
-# Reference (open-source Niryo ROS stack):
-#   github.com/NiryoRobotics/ned_ros — niryo_robot_python_ros_wrapper sets
-#   `_call_service('/niryo_robot_hardware_interface/reboot_motors', Trigger)`
-
-# ── Singleton rosbridge client ───────────────────────────────────────────────
-# roslibpy uses Twisted under the hood; Twisted's reactor can only be started
-# ONCE per process (twisted.internet.error.ReactorNotRestartable). Connecting
-# then terminating on every call breaks the second call. We keep one long-
-# lived client and reuse it across all ROS service invocations.
 _ros_client = None
 _ros_client_lock = threading.Lock()
 
@@ -739,9 +552,6 @@ def _get_ros_client():
     with _ros_client_lock:
         if _ros_client is not None and _ros_client.is_connected:
             return _ros_client
-
-        # Old client exists but isn't connected — drop it before creating
-        # a fresh one. terminate() is safe even on a half-dead client.
         if _ros_client is not None:
             try:
                 _ros_client.terminate()
@@ -768,12 +578,6 @@ def _get_ros_client():
 def _call_ros_service(service_name: str, service_type: str,
                       args: Optional[dict] = None,
                       timeout: float = 25.0) -> Tuple[bool, str]:
-    """Call a ROS service over the shared rosbridge_websocket client.
-    Returns (success, message). Response shape detection:
-      - `success` (bool)  → std_srvs/Trigger style
-      - `status`  (int)   → Niryo services style — convention is >= 1 OK,
-                            <= 0 failure (e.g. ExecuteProgram returns
-                            status=1 on success, status=-1 on error)."""
     try:
         import roslibpy
     except ImportError as exc:
@@ -801,11 +605,6 @@ def _call_ros_service(service_name: str, service_type: str,
     except Exception as exc:
         return False, f"service call failed: {exc}"
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# BACKEND / EVENT BUS HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def _emit_pipeline_state(state: str, message: str) -> None:
     try:
         payload = {
@@ -827,17 +626,8 @@ def _say(text: str) -> None:
     def _run():
         with _state_lock:
             robot = _robot
-
-        # ── 1) Try the robot's own TTS ────────────────────────────────────
-        # CRITICAL: these are pyniryo calls. They MUST be serialised against
-        # the camera grabber and motion threads via _pyniryo_lock, otherwise
-        # they interleave reads on the same TCP socket and corrupt the byte
-        # stream (the 'utf-8 codec can't decode byte 0xff' streak that always
-        # started right after a successful inspection — _say() was the
-        # offender, not _classify_defect()).
         if robot is not None:
             tried: List[str] = []
-            # Path A: robot.sound.say(text, lang)   (Ned 2 Sound API)
             sound = getattr(robot, "sound", None)
             if sound is not None:
                 say_fn = getattr(sound, "say", None)
@@ -850,7 +640,6 @@ def _say(text: str) -> None:
                             return
                         except Exception as exc:
                             tried.append(f"sound.say{args}: {exc}")
-            # Path B: any direct method on the robot object
             for name in ("say", "speak", "tts", "play_tts"):
                 fn = getattr(robot, name, None)
                 if callable(fn):
@@ -863,8 +652,6 @@ def _say(text: str) -> None:
                         tried.append(f"{name}: {exc}")
             if tried:
                 log.debug(f"[say] robot TTS not available: {tried}")
-
-        # ── 2) Fallback: PC TTS via Windows SAPI ──────────────────────────
         try:
             import subprocess
             safe = text.replace("'", " ").replace('"', " ")
@@ -903,7 +690,7 @@ def post_result_to_backend(
         "expiry_date":     date or "missing",
         "barcode":         bc or "missing",
         "label":           label,
-        "defect_type":     defect_type,        # null when label == "ok"
+        "defect_type":     defect_type,        
         "confidence":      round(float(overall_conf), 4),
         "processing_time": round(float(processing_time), 4),
         "timestamp":       datetime.now().astimezone().isoformat(),
@@ -927,11 +714,6 @@ def _notify_backend_action(item_id: str, action: str, error: Optional[str] = Non
     except Exception:
         pass
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ROBOT HTTP API  (:5002)
-# ═══════════════════════════════════════════════════════════════════════════════
-
 @robot_app.route("/inspection-result", methods=["POST"])
 def receive_inspection_result():
     data       = request.get_json(force=True) or {}
@@ -953,11 +735,6 @@ def receive_inspection_result():
 
 
 def _is_pyniryo_desync(exc: BaseException) -> bool:
-    """Return True if `exc` is the pyniryo TCP byte-stream desync —
-    surfaces as either a real UnicodeDecodeError or some pyniryo wrapper
-    whose stringified form contains 'utf-8 codec can't decode byte 0xXX'.
-    Recovery is identical regardless of the leading byte (0xff, 0xab, …)
-    or position: rebuild the TCP socket."""
     if isinstance(exc, UnicodeDecodeError):
         return True
     msg = str(exc).lower()
@@ -965,26 +742,11 @@ def _is_pyniryo_desync(exc: BaseException) -> bool:
 
 
 def _reboot_tool_sequence(robot, errors: List[str]) -> None:
-    """Real Niryo Studio 'Reboot tool' — sends pyniryo's TCP command 145
-    (TOOL_REBOOT) which makes the firmware power-cycle the tool's
-    Dynamixel motor. This is what clears the 'Overload' error operators
-    see in HardwareStatus. Surrounding update_tool() calls re-bind the
-    tool socket so subsequent grasp/release work normally afterwards.
-
-    Each pyniryo call is serialised via _pyniryo_lock. Raises (or re-
-    raises) on pyniryo TCP socket desync so the caller can rebuild and
-    retry on a fresh socket."""
-    # Step A — re-detect the connected tool so tool_reboot() targets the
-    # correct end-effector ID.
     with _pyniryo_lock:
         robot.update_tool()
     time.sleep(0.3)
-
-    # Step B — the actual reboot.
     fn = getattr(robot, "tool_reboot", None)
     if not callable(fn):
-        # pyniryo build too old to expose tool_reboot — fall back to
-        # update_tool which at least re-binds the tool channel.
         errors.append("tool_reboot not available in this pyniryo build")
     else:
         try:
@@ -994,9 +756,6 @@ def _reboot_tool_sequence(robot, errors: List[str]) -> None:
             if _is_pyniryo_desync(exc):
                 raise
             errors.append(f"tool_reboot: {exc}")
-
-    # Step C — refresh the tool binding after the firmware power-cycle so
-    # the next grasp/release call doesn't hit a stale handle.
     time.sleep(0.5)
     try:
         with _pyniryo_lock:
@@ -1009,19 +768,6 @@ def _reboot_tool_sequence(robot, errors: List[str]) -> None:
 
 @robot_app.route("/reboot-tool", methods=["POST"])
 def reboot_tool():
-    """Re-detect the connected tool and reset its state. This is what 'reboot
-    tool' actually means on pyniryo's TCP API — there is no literal motor-level
-    tool reboot. The sequence:
-      1. release_with_tool()  — drop whatever is being held (safe even if not gripping).
-      2. update_tool()        — re-poll the robot for the connected tool.
-      3. open_gripper(500)    — return to a known open state.
-
-    Robustness: the camera grabber is paused for the duration to eliminate
-    any chance of pyniryo socket interleaving (even with _pyniryo_lock the
-    pyniryo client can leave un-read bytes in the socket buffer when a call
-    aborts mid-RPC, which then surface as 'utf-8 codec can't decode byte
-    0xff' on the next call). If a desync is still detected, we rebuild the
-    TCP socket via reconnect_robot_socket() and retry the sequence once."""
     global _last_action, _camera_paused
     if not ensure_robot_ready():
         return jsonify({"message": "robot_not_ready"}), 503
@@ -1035,8 +781,6 @@ def reboot_tool():
     errors: List[str] = []
     prev_paused = _camera_paused
     _camera_paused = True
-    # Wait one camera-loop cycle so the grabber drains any in-flight read
-    # before we start issuing reboot RPCs on the same socket.
     time.sleep(0.25)
 
     try:
@@ -1052,8 +796,6 @@ def reboot_tool():
             with _state_lock:
                 robot = _robot
             errors.append("recovered from socket desync")
-            # Fresh socket — pause again briefly so any pyniryo handshake
-            # bytes settle before we re-issue the reboot RPCs.
             time.sleep(0.3)
             _reboot_tool_sequence(robot, errors)
 
@@ -1075,22 +817,6 @@ def reboot_tool():
 
 @robot_app.route("/reboot-motors", methods=["POST"])
 def reboot_motors():
-    """Real motor reboot — calls the same ROS service that Niryo Studio's
-    'Reboot motors' button triggers:
-
-        /niryo_robot_hardware_interface/reboot_motors   (std_srvs/Trigger)
-
-    pyniryo's TCP API has no equivalent (the Command enum stops at
-    TOOL_REBOOT=145 — there is no MOTORS_REBOOT), so we go around it
-    via rosbridge_websocket on the robot's :9090 port using roslibpy.
-
-    Reference: github.com/NiryoRobotics/ned_ros →
-      niryo_robot_python_ros_wrapper/src/.../ros_wrapper.py:
-        `self._call_service('/niryo_robot_hardware_interface/reboot_motors', Trigger)`
-
-    After the firmware reboot completes the joints lose state, so we
-    re-bind the tool and move back to INSPECTION_POSE so subsequent
-    inspections resume cleanly."""
     global _last_action, _robot_ok, _camera_paused
     if not ensure_robot_ready():
         return jsonify({"message": "robot_not_ready"}), 503
@@ -1104,10 +830,9 @@ def reboot_motors():
     warnings: List[str] = []
     prev_paused = _camera_paused
     _camera_paused = True
-    time.sleep(0.25)  # drain any in-flight camera read
+    time.sleep(0.25) 
 
     try:
-        # ── Step 1 — invoke the real ROS reboot service. ─────────────────
         ok, ros_msg = _call_ros_service(
             "/niryo_robot_hardware_interface/reboot_motors",
             "std_srvs/Trigger",
@@ -1122,10 +847,6 @@ def reboot_motors():
             }), 502
 
         log.info(f"[reboot_motors] ROS service reported: {ros_msg}")
-
-        # The motor reboot drops calibration + tool binding on some
-        # firmware versions. Give the firmware a moment to settle, then
-        # re-init via the pyniryo TCP socket.
         time.sleep(2.0)
 
         try:
@@ -1143,8 +864,6 @@ def reboot_motors():
             if _is_pyniryo_desync(exc):
                 raise
             warnings.append(f"update_tool: {exc}")
-
-        # ── Step 2 — return to INSPECTION_POSE. ──────────────────────────
         safe_move(INSPECTION_POSE, label="INSPECTION_POSE (after motors reboot)")
 
         with _state_lock:
@@ -1229,7 +948,6 @@ def get_status():
 def reference_date_route():
     """GET → current cutoff. POST {"reference_date": "12 JAN"} → set it."""
     global _reference_date
-    # Local import to avoid circular dependency at module load time.
     from ai import _parse_dd_mmm
 
     if request.method == "POST":
@@ -1261,24 +979,12 @@ def _start_robot_http_server() -> None:
     log.info(f"Robot HTTP service starting on http://0.0.0.0:{ROBOT_SERVICE_PORT}")
     robot_app.run(host="0.0.0.0", port=ROBOT_SERVICE_PORT, threaded=True)
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# IN-PROCESS CAMERA GRABBER  (replaces standalone niryo_stream.py)
-# ═══════════════════════════════════════════════════════════════════════════════
-# This thread is the SOLE caller of robot.get_img_compressed(). It pumps JPEGs
-# into a lock-protected slot consumed by both:
-#   - AI pipelines: read decoded BGR frame (`get_camera_frame_bgr`)
-#   - Stream HTTP route on :5001: read raw JPEG bytes (`/stream`)
-
 def _camera_loop() -> None:
     global _camera_jpeg_bytes, _camera_frame_bgr, _camera_frame_count
     log.info("[camera] grabber thread started — pumping frames from robot.get_img_compressed()")
     fail_streak = 0
-    # When the pyniryo TCP byte stream desyncs (utf-8 decode errors after a
-    # long session), retrying the same socket does nothing — only a fresh
-    # NiryoRobot() rebuild clears the protocol state.
-    RECONNECT_AFTER_STREAK = 20  # ~2 s at 100 ms retry interval
-    RECONNECT_COOLDOWN_S   = 4.0 # short enough to retry within a few frames
+    RECONNECT_AFTER_STREAK = 20  
+    RECONNECT_COOLDOWN_S   = 4.0 
     last_reconnect_ts = 0.0
     while True:
         with _state_lock:
@@ -1288,9 +994,6 @@ def _camera_loop() -> None:
             time.sleep(0.2)
             continue
         try:
-            # Serialise every pyniryo call so the camera, motion, and status
-            # threads don't interleave reads on the same socket. Pyniryo is
-            # NOT thread-safe; concurrent calls cause the utf-8 desync.
             with _pyniryo_lock:
                 jpeg = robot.get_img_compressed()
             if not jpeg:
@@ -1311,29 +1014,21 @@ def _camera_loop() -> None:
             if fail_streak >= RECONNECT_AFTER_STREAK and (time.time() - last_reconnect_ts) > RECONNECT_COOLDOWN_S:
                 last_reconnect_ts = time.time()
                 if reconnect_robot_socket(reason=f"camera streak={fail_streak}"):
-                    fail_streak = 0  # give the fresh socket a clean slate
+                    fail_streak = 0 
             time.sleep(0.1)
 
 
 def start_camera_thread() -> None:
-    """Start the camera grabber once the robot is connected. Idempotent."""
     if any(t.name == "camera-grabber" for t in threading.enumerate()):
         return
     threading.Thread(target=_camera_loop, daemon=True, name="camera-grabber").start()
 
 
 def get_camera_frame_bgr() -> Optional[Tuple[np.ndarray, int]]:
-    """Snapshot of the latest decoded frame for AI pipelines. Returns
-    (frame_copy, frame_count) or None if no frame yet."""
     with _camera_lock:
         if _camera_frame_bgr is None:
             return None
         return _camera_frame_bgr.copy(), _camera_frame_count
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# STREAM HTTP API  (:5001)  — same contract as the retired niryo_stream.py
-# ═══════════════════════════════════════════════════════════════════════════════
 
 @stream_app.route("/stream")
 def _stream_route():
@@ -1353,10 +1048,6 @@ def _stream_route():
 
 @stream_app.route("/health", methods=["GET"])
 def _stream_health():
-    # During reconnect_robot_socket(), _robot is briefly None while _robot_ok
-    # stays True (deliberate — see reconnect_robot_socket docstring). Report
-    # robot_connected from _robot_ok alone so Node does not panic-suspend the
-    # pipeline during a 200ms socket rebuild.
     with _state_lock:
         ok = _robot_ok
     with _camera_lock:
@@ -1380,8 +1071,6 @@ def _plc_which_python():
 
 @stream_app.route("/plc/test", methods=["GET"])
 def _plc_test():
-    """Diagnostic route — runs the exact same steps as the working test.py
-    and reports which step passes or fails. Hit http://localhost:5001/plc/test"""
     from config import _SNAP7_AVAILABLE, _plc_client, PLC_IP, PLC_RACK, PLC_SLOT, PLC_DB_NUMBER
     steps = {}
 

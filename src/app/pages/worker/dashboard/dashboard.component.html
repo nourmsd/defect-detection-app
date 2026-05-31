@@ -1,6 +1,4 @@
 <div class="worker-shell" [class.light-mode]="themeService.isLight">
-
-  <!-- ══════════════════ SIDEBAR ══════════════════ -->
   <aside class="sidebar" [class.collapsed]="sidebarCollapsed">
 
     <div class="sidebar-brand">
@@ -10,8 +8,6 @@
         <span class="brand-sub">AGRO-TECH</span>
       </div>
     </div>
-
-    <!-- System Status -->
     <div class="sidebar-section">
       <div class="sidebar-section-title" *ngIf="!sidebarCollapsed">SYSTEM STATUS</div>
       <div class="sys-item">
@@ -43,8 +39,6 @@
         </ng-container>
       </div>
     </div>
-
-    <!-- Live AI Pipeline -->
     <div class="sidebar-section">
       <div class="sidebar-section-title" *ngIf="!sidebarCollapsed">LIVE AI PIPELINE</div>
       <div class="ai-status-badge"
@@ -100,13 +94,9 @@
       </button>
     </div>
 
-  </aside><!-- /sidebar -->
-
-
-  <!-- ══════════════════ MAIN AREA ══════════════════ -->
+  </aside>
   <div class="main-area">
 
-    <!-- TOP BAR -->
     <header class="topbar">
       <button class="menu-btn" (click)="sidebarCollapsed = !sidebarCollapsed">
         <mat-icon>menu</mat-icon>
@@ -134,11 +124,8 @@
         </button>
       </div>
     </header>
-
-    <!-- CONTENT AREA -->
     <div class="content-area">
 
-      <!-- ── KPI ROW ── -->
       <div class="kpi-row">
 
         <div class="stat-card">
@@ -158,8 +145,6 @@
           <span class="stat-label">DEFECTIVE</span>
           <span class="stat-sub">rejected</span>
         </div>
-
-        <!-- 4th card: Defect Rate donut -->
         <div class="stat-card stat-card-wide">
           <div class="donut-row">
             <div class="mini-donut-wrap">
@@ -197,23 +182,15 @@
           <span class="stat-label" style="margin-top:6px">DEFECT RATE</span>
         </div>
 
-      </div><!-- /kpi-row -->
-
-
-      <!-- ── MAIN GRID ── -->
+      </div>
       <div class="main-grid">
-
-        <!-- ═══ LEFT COLUMN: Camera | History + Inspection ═══ -->
         <div class="left-col">
-
-          <!-- Camera Panel -->
           <div class="panel camera-panel">
             <div class="panel-label">
               LIVE CAMERA FEED
               <span class="fps-tag">{{ streamHealth.avg_fps > 0 ? (streamHealth.avg_fps | number:'1.0-1') : (fps > 0 ? fps : '0.0') }} FPS</span>
             </div>
             <div class="camera-split">
-              <!-- Main AI diagnostic feed (robot camera) -->
               <div class="camera-box">
                 <span class="c-tl"></span><span class="c-tr"></span>
                 <span class="c-bl"></span><span class="c-br"></span>
@@ -242,8 +219,6 @@
                   <span>{{ detectionStatus === 'NORMAL' ? 'CONFORMING' : detectionStatus }}</span>
                 </div>
               </div>
-
-              <!-- Barcode (DroidCam) feed with YOLO overlay -->
               <div class="camera-box">
                 <span class="c-tl"></span><span class="c-tr"></span>
                 <span class="c-bl"></span><span class="c-br"></span>
@@ -282,12 +257,8 @@
                 <span class="meta-val">{{ streamHealth.last_frame_age_sec }}s</span>
               </div>
             </div>
-          </div><!-- /camera-panel -->
-
-          <!-- History + Inspection stacked vertically -->
+          </div>
           <div class="left-right-stack">
-
-            <!-- Detection History -->
             <div class="panel history-panel">
               <div class="panel-label">
                 DETECTION HISTORY
@@ -317,9 +288,7 @@
                   <button class="pager-btn" [disabled]="histPage === histTotalPages" (click)="histPage = histPage + 1">&#8250;</button>
                 </div>
               </div>
-            </div><!-- /history-panel -->
-
-            <!-- Current Inspection -->
+            </div>
             <div class="panel insp-panel">
               <div class="panel-label">
                 CURRENT INSPECTION
@@ -329,8 +298,6 @@
                 </span>
               </div>
               <div class="insp-grid">
-
-                <!-- Result -->
                 <div class="insp-cell">
                   <div class="insp-icon"
                     [class.icon-ok]="detectionStatus === 'NORMAL'"
@@ -351,8 +318,6 @@
                     </span>
                   </div>
                 </div>
-
-                <!-- AI Confidence gauge -->
                 <div class="insp-cell">
                   <div class="insp-gauge-wrap">
                     <svg class="insp-gauge-svg" viewBox="0 0 120 72">
@@ -370,8 +335,6 @@
                   </div>
                   <span class="insp-label">AI CONFIDENCE</span>
                 </div>
-
-                <!-- Last Detected -->
                 <div class="insp-cell">
                   <div class="insp-cell-content">
                     <span class="insp-time">{{ lastDetectionTime }}</span>
@@ -391,8 +354,6 @@
                     <span class="insp-label">BARCODE {{ pendingBarcode && !lastBarcode ? '(PENDING)' : '' }}</span>
                   </div>
                 </div>
-
-                <!-- Processing Time -->
                 <div class="insp-cell">
                   <div class="insp-cell-content">
                     <span class="insp-proc">{{ lastProcessingTime > 0 ? lastProcessingTime : '—' }}</span>
@@ -400,18 +361,13 @@
                   </div>
                 </div>
 
-              </div><!-- /insp-grid -->
-            </div><!-- /insp-panel -->
+              </div>
+            </div>
 
-          </div><!-- /left-right-stack -->
+          </div>
 
-        </div><!-- /left-col -->
-
-
-        <!-- ═══ RIGHT COLUMN: Robot + Error Logs ═══ -->
+        </div>
         <div class="right-col">
-
-          <!-- Robot Controls -->
           <div class="panel robot-panel">
             <div class="panel-label">
               ROBOT CONTROLS
@@ -451,8 +407,6 @@
               <span class="rs-lbl">LAST ACTION</span>
               <span class="rs-val rs-action-val">{{ isRobotConnected ? (robotLastAction || '—') : '—' }}</span>
             </div>
-
-            <!-- Emergency Stop -->
             <button class="estop-btn"
               [disabled]="cmdLoading['emergency-stop']"
               [class.estop-firing]="cmdLoading['emergency-stop']"
@@ -460,8 +414,6 @@
               <span class="estop-icon">&#9632;</span>
               {{ cmdLoading['emergency-stop'] ? 'Stopping…' : 'EMERGENCY STOP' }}
             </button>
-
-            <!-- Action buttons -->
             <div class="robot-actions">
               <button class="robot-action-btn btn-tool"
                 [disabled]="!isRobotConnected || cmdLoading['reboot-tool']"
@@ -488,14 +440,10 @@
               <mat-icon>{{ actionSuccess ? 'check_circle' : 'error' }}</mat-icon>
               {{ actionMessage }}
             </div>
-          </div><!-- /robot-panel -->
-
-          <!-- Reset Session -->
+          </div>
           <button class="reset-btn" (click)="resetSession()">
             <mat-icon>restart_alt</mat-icon>RESET SESSION
           </button>
-
-          <!-- Error Logs -->
           <div class="error-section">
 
             <div class="err-header" (click)="errorLogsExpanded = !errorLogsExpanded">
@@ -566,20 +514,18 @@
                 </button>
               </div>
 
-            </div><!-- /err-body -->
+            </div>
 
-          </div><!-- /error-section -->
+          </div>
 
-        </div><!-- /right-col -->
+        </div>
 
-      </div><!-- /main-grid -->
+      </div>
 
-    </div><!-- /content-area -->
+    </div>
 
-  </div><!-- /main-area -->
+  </div>
 
-
-  <!-- BROADCAST BANNER -->
   <div class="danger-banner" *ngIf="dangerAlertActive"
     [class.danger-banner--urgent]="dangerAlertType === 'urgent'"
     [class.danger-banner--info]="dangerAlertType === 'info'">

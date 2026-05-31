@@ -65,7 +65,32 @@
       "Bash(python -c \"import websockets; print\\('websockets:', websockets.__version__\\)\")",
       "Bash(python -c \"import roslibpy; print\\('roslibpy:', roslibpy.__version__\\)\")",
       "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:4200)",
-      "PowerShell(cmd /c \"dir C:\\\\Dev\\\\Stage_PFE\\\\smart-quality-control-frontend\\\\backend /b /a\")"
+      "PowerShell(cmd /c \"dir C:\\\\Dev\\\\Stage_PFE\\\\smart-quality-control-frontend\\\\backend /b /a\")",
+      "Read(//c/Dev/Stage_PFE/ai/**)",
+      "Read(//c/Users/nourm/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/b6f7adfd-c17e-4f70-bcf6-f74e957a3981/f1966795-120c-44c9-b13b-7ba61d4b5094/skills/docx/**)",
+      "Bash(python scripts/office/unpack.py \"C:\\\\Users\\\\nourm\\\\Downloads\\\\PFE_version1 \\(3\\).docx\" unpacked/)",
+      "Bash(python scripts/office/pack.py unpacked/ \"C:\\\\Users\\\\nourm\\\\Downloads\\\\PFE_version1_charts_fixed.docx\" --original \"C:\\\\Users\\\\nourm\\\\Downloads\\\\PFE_version1 \\(3\\).docx\")",
+      "Bash(python)",
+      "Bash(python scripts/office/pack.py unpacked3/ \"C:\\\\Users\\\\nourm\\\\Downloads\\\\PFE_version1_charts_fixed.docx\" --original \"C:\\\\Users\\\\nourm\\\\Downloads\\\\PFE_version1 \\(3\\).docx\")",
+      "Bash(python scripts/office/pack.py unpacked3/ \"C:\\\\Users\\\\nourm\\\\Downloads\\\\PFE_version1_charts_fixed.docx\" --original \"C:\\\\Users\\\\nourm\\\\Downloads\\\\PFE_version1 \\(3\\).docx\" --validate false)",
+      "Bash(ls \"C:\\\\Users\\\\nourm\\\\AppData\\\\Roaming\\\\Claude\\\\local-agent-mode-sessions\\\\skills-plugin\\\\\" 2>/dev/null | head -20)",
+      "PowerShell(cmd /c dir \"C:\\\\Users\\\\nourm\\\\AppData\\\\Roaming\\\\Claude\")",
+      "Bash(python3)",
+      "Bash(python scripts/office/pack.py unpacked3/ \"C:\\\\Users\\\\nourm\\\\Downloads\\\\PFE_version1_concise.docx\" --original \"C:\\\\Users\\\\nourm\\\\Downloads\\\\PFE_version1_charts_fixed.docx\" --validate false)",
+      "Bash(dir \"C:\\\\Dev\\\\Stage_PFE\\\\smart-quality-control-frontend\\\\src\" /s /b)",
+      "Bash(dir \"C:\\\\Dev\\\\Stage_PFE\\\\smart-quality-control-frontend\" /b)",
+      "Bash(node -e \"require\\('docx'\\); console.log\\('ok'\\)\")",
+      "Bash(node gen_dedicaces.js)",
+      "Bash(npm list *)",
+      "Bash(node -e \"require\\('/Users/nourm/AppData/Roaming/npm/node_modules/docx'\\)\")",
+      "Bash(node -e \"require\\('C:/Users/nourm/AppData/Roaming/npm/node_modules/docx'\\); console.log\\('ok'\\)\")",
+      "Bash(Remove-Item gen_dedicaces.js)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Dev\\\\Stage_PFE\\\\smart-quality-control-frontend\\\\src\\\\app\\\\pages\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Select-String -Pattern \"guard|auth|permission|role\")",
+      "Bash(python -c \"from pypdf import PdfReader; r = PdfReader\\('C:/Users/nourm/Downloads/Takwa_Nour_Thesis_Final.pdf'\\); print\\(f'Pages: {len\\(r.pages\\)}'\\); [print\\(f'Page {i+1}: {r.pages[i].extract_text\\(\\)[:200]}'\\) for i in range\\(5\\)]\")",
+      "Bash(python -c \" *)",
+      "Bash(node make_slides.js)"
     ]
   }
 }

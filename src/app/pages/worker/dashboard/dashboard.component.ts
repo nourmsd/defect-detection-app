@@ -43,11 +43,7 @@ export interface ErrorLog {
   standalone: false
 })
 export class WorkerDashboardComponent implements OnInit, OnDestroy {
-
-  /* ── Sidebar ───────────────────────────────────────────── */
   sidebarCollapsed = false;
-
-  /* ── Production counters ───────────────────────────────── */
   inspections: Inspection[] = [];
   normalCount = 0;
   defectCount = 0;
@@ -67,8 +63,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   get histPageEnd(): number {
     return Math.min(this.histPage * this.HIST_PAGE_SIZE, this.inspections.length);
   }
-
-  /* ── Detection state ───────────────────────────────────── */
   currentTime = '';
   fps = 0;
   lastProcessingTime = 0;
@@ -78,49 +72,31 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   lastDetectedDate = 'missing';
   lastDefectType: string | null = null;
   lastBarcode: string | null = null;
-
-  /* ── Pending barcode (pre-scan station) ─────────────────── */
   pendingBarcode: string | null = null;
   pendingBarcodeType: string | null = null;
   pendingBarcodeAt: string | null = null;
-
-  /* ── Live inference (per-cycle AI state) ───────────────── */
   inferenceStatus = 'IDLE';
   liveDate = '—';
   liveConf = 0;
   liveYoloCount = 0;
   inferenceFps = 0;
   inferenceMs = 0;
-
-  /* ── Camera / stream ───────────────────────────────────── */
   cameraStreamUrl = '';
   streamActive = false;
   barcodeStreamUrl = '';
   barcodeStreamActive = false;
   streamHealth: StreamHealth = this.defaultStreamHealth();
-
-  /* ── System status ─────────────────────────────────────── */
   systemLinks = { aiModel: false, camera: false };
-
-  /* ── Robot status (basic) ──────────────────────────────── */
   isRobotConnected = false;
   plcConnected = false;
   jointPositions: number[] = [];
-
-  /* ── Robot status (extended) ───────────────────────────── */
   freemotionActive = false;
   robotLastAction = '—';
   robotQueueSize = 0;
-
-  /* ── Joint animation ───────────────────────────────────── */
   jointMoving: boolean[] = [false, false, false, false, false, false];
   private prevJointPositions: number[] = [];
   private jMovingTimers: (ReturnType<typeof setTimeout> | null)[] = Array(6).fill(null);
-
-  /* ── Alarms log ─────────────────────────────────────────── */
   alarms: RobotAlarm[] = [];
-
-  /* ── Error logs / alerts section ──────────────────────────── */
   errorLogs: ErrorLog[] = [];
   errorLogsLoading = false;
   showResolvedLogs = false;
@@ -130,21 +106,13 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
   get visibleErrorLogs(): ErrorLog[] {
     return this.errorLogs.slice(0, this.ERR_VISIBLE_LIMIT);
   }
-
-  /* ── Danger alert banner ───────────────────────────────────── */
   dangerAlertActive = false;
   dangerAlertMessage = '';
   dangerAlertType: 'urgent' | 'info' = 'info';
-
-  /* ── Command loading states ─────────────────────────────── */
   cmdLoading: Record<string, boolean> = {};
-
-  /* ── Robot action feedback ─────────────────────────────── */
   actionLoading = false;
   actionMessage = '';
   actionSuccess = true;
-
-  /* ── Internal ───────────────────────────────────────────── */
   private readonly STREAM_BASE_PORT = 5003;
   private readonly BARCODE_STREAM_PORT = 5003;
   private barcodeRetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -181,8 +149,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     this.pollRobotStatus();
     this.pollStreamHealth();
     this.loadErrorLogs();
-
-    /* Real-time socket events */
     this.subscriptions.add(
       this.socketService.onEvent().subscribe({
         next: (event: SocketEventEnvelope) => {
@@ -238,9 +204,9 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
               this.dangerAlertMessage = dp.message || '';
               this.dangerAlertType = dp.alert_type === 'urgent' ? 'urgent' : 'info';
               if (this.dangerAlertType === 'urgent') {
-                this.toast.error(`🚨 ${dp.message}`, 12000);
+                this.toast.error(` ${dp.message}`, 12000);
               } else {
-                this.toast.info(`📢 ${dp.message}`, 8000);
+                this.toast.info(` ${dp.message}`, 8000);
               }
               this.cdr.detectChanges();
             });
@@ -275,7 +241,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
 
           if (type === 'daily_reset') {
             this.ngZone.run(() => {
-              // 7PM daily reset — clear inspection counters and restart from fresh
               this.inspections = [];
               this.totalInspections = 0;
               this.normalCount = 0;
@@ -290,8 +255,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
         }
       })
     );
-
-    /* Per-cycle inference status */
     this.subscriptions.add(
       this.socketService.onInferenceStatus().subscribe({
         next: (s: InferenceStatusSocketPayload) => {
@@ -307,8 +270,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
         }
       })
     );
-
-    /* Polling fallback */
     this.subscriptions.add(
       interval(this.POLL_MS).subscribe(() => {
         this.ngZone.run(() => {
@@ -319,10 +280,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
       })
     );
   }
-
-  /* ════════════════════════════════════════════════════════
-     ROBOT STATUS
-  ════════════════════════════════════════════════════════ */
 
   private pollRobotStatus(): void {
     this.apiService.getRobotStatus().subscribe({
@@ -341,7 +298,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
       },
       error: () => {
         this.robotStatusFailureCount += 1;
-        // Avoid UI flapping from transient backend/network hiccups.
         if (this.robotStatusFailureCount >= this.ROBOT_OFFLINE_FAILURE_THRESHOLD) {
           this.applyRobotConnectivity(false);
           if (!this.isRobotConnected) {
@@ -352,10 +308,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
       }
     });
   }
-
-  // Alert codes the operator does NOT want surfaced. The dashboard's connectivity
-  // pill already shows when the robot is offline, so suppressing this code keeps
-  // the alert list focused on actionable issues only.
   private readonly suppressedAlertCodes = new Set<string>(['robot_not_ready']);
 
   private ingestRobotStatusAlerts(alerts?: Array<{ level?: string; code?: string; message?: string }>): void {
@@ -410,10 +362,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     }
     this.prevJointPositions = [...newJoints];
   }
-
-  /* ════════════════════════════════════════════════════════
-     ROBOT CONTROL COMMANDS
-  ════════════════════════════════════════════════════════ */
 
   robotCommand(cmd: string, confirmMsg?: string): void {
     if (confirmMsg && !window.confirm(confirmMsg)) return;
@@ -479,10 +427,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     return ((rad || 0) * 180 / Math.PI).toFixed(1);
   }
 
-  /* ════════════════════════════════════════════════════════
-     SESSION RESET
-  ════════════════════════════════════════════════════════ */
-
   resetSession(): void {
     this.inspections = [];
     this.normalCount = 0;
@@ -500,17 +444,10 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     this.histPage = 1;
   }
 
-  /* ════════════════════════════════════════════════════════
-     INSPECTION SOCKET HANDLER
-  ════════════════════════════════════════════════════════ */
-
   private handleNewInspection(alert: InspectionSocketPayload): void {
     if (!alert) return;
     const inspection = this.normalizeAlert(alert);
     if (inspection) this.appendInspection(inspection);
-    // Pending slot was either consumed by this inspection (backend already
-    // emitted pending_barcode_cleared) or replaced — either way the final
-    // value is in this inspection payload, so drop any lingering pending UI.
     this.pendingBarcode = null;
     this.pendingBarcodeType = null;
     this.pendingBarcodeAt = null;
@@ -583,10 +520,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     return map[this.lastDefectType] || this.lastDefectType;
   }
 
-  /* ════════════════════════════════════════════════════════
-     STREAM & HEALTH
-  ════════════════════════════════════════════════════════ */
-
   private syncLiveSnapshot(): void {
     this.apiService.getInspections().subscribe({
       next: (res) => {
@@ -623,7 +556,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
     this.streamHealth = {
       ...this.streamHealth,
       status: health?.stream || 'offline',
-      // Keep robot connectivity sourced from HTTP /robot/status polling.
       robot_connected: this.isRobotConnected,
       avg_fps: Number(health?.fps) || 0,
       camera_status: health?.camera || 'Stream offline'
@@ -696,10 +628,6 @@ export class WorkerDashboardComponent implements OnInit, OnDestroy {
       avg_fps: 0, stream_stale: true, last_frame_age_sec: 0, camera_status: 'Stream offline'
     };
   }
-
-  /* ════════════════════════════════════════════════════════
-     ERROR LOGS
-  ════════════════════════════════════════════════════════ */
 
   loadErrorLogs(): void {
     this.errorLogsLoading = true;
